@@ -180,7 +180,12 @@ export class ConnectionResolver {
     record: InstanceRecord | undefined,
   ): string | undefined {
     if (record?.config.workspaceUri) {
-      return record.config.workspaceUri;
+      try {
+        const uri = vscode.Uri.parse(record.config.workspaceUri);
+        return uri.fsPath;
+      } catch {
+        return record.config.workspaceUri;
+      }
     }
 
     return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;

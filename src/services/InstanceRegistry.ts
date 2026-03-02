@@ -23,6 +23,7 @@ export class InstanceRegistry implements vscode.Disposable {
   private readonly debounceMs: number;
   private persistTimer: NodeJS.Timeout | undefined;
   private changeSubscription: vscode.Disposable | undefined;
+  private hydratedStore: InstanceStore | undefined;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -36,6 +37,7 @@ export class InstanceRegistry implements vscode.Disposable {
    * Restores persisted instances into the given store and subscribes for auto-persist.
    */
   public hydrate(store: InstanceStore): void {
+    this.hydratedStore = store;
     const globalConfigs = this.readGlobalConfigs();
     const workspaceState = this.readWorkspaceState();
     const recordsById = new Map<string, InstanceConfig>();
@@ -93,13 +95,18 @@ export class InstanceRegistry implements vscode.Disposable {
   }
 
   public dispose(): void {
+    // Flush any pending debounced persist before shutdown
     if (this.persistTimer) {
       clearTimeout(this.persistTimer);
       this.persistTimer = undefined;
+      if (this.hydratedStore) {
+        void this.persist(this.hydratedStore).catch(() => {});
+      }
     }
 
     this.changeSubscription?.dispose();
     this.changeSubscription = undefined;
+    this.hydratedStore = undefined;
   }
 
   private schedulePersist(store: InstanceStore): void {

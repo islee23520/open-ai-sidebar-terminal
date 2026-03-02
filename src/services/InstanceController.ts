@@ -87,6 +87,8 @@ export class InstanceController implements vscode.Disposable {
         error: undefined,
       });
     } catch (error) {
+      // Release the port that was reserved before the failure
+      this.portManager.releaseTerminalPorts(terminalKey);
       this.handleFailure(current, "spawn", error, {
         config: nextConfig,
         runtime: {

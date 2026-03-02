@@ -105,6 +105,22 @@ export class InstanceDiscoveryService {
       return;
     }
 
+    // Build set of currently discovered IDs
+    const currentDiscoveredIds = new Set<string>(
+      instances.map((instance) => `discovered-${instance.port}`),
+    );
+
+    // Remove stale discovered-* entries that no longer exist
+    for (const existing of this.instanceStore.getAll()) {
+      if (
+        existing.config.id.startsWith("discovered-") &&
+        !currentDiscoveredIds.has(existing.config.id)
+      ) {
+        this.instanceStore.remove(existing.config.id);
+      }
+    }
+
+    // Upsert currently discovered instances
     for (const instance of instances) {
       const instanceId = `discovered-${instance.port}`;
       const config: InstanceConfig = {

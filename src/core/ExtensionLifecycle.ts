@@ -13,6 +13,9 @@ import { InstanceStore } from "../services/InstanceStore";
 import { InstanceRegistry } from "../services/InstanceRegistry";
 import { InstancesDashboardProvider } from "../providers/InstancesDashboardProvider";
 import { InstanceQuickPick } from "../services/InstanceQuickPick";
+import { InstanceController } from "../services/InstanceController";
+import { PortManager } from "../services/PortManager";
+import { ConnectionResolver } from "../services/ConnectionResolver";
 
 // Module-level state for batching file sends from context menu
 let fileSendAccumulator: vscode.Uri[] = [];
@@ -35,8 +38,23 @@ export class ExtensionLifecycle {
   private instanceRegistry: InstanceRegistry | undefined;
   private instancesDashboardProvider: InstancesDashboardProvider | undefined;
   private instanceQuickPick: InstanceQuickPick | undefined;
+  private instanceController: InstanceController | undefined;
+  private portManager: PortManager | undefined;
 
   private static readonly TERMINAL_ID = "opencode-main";
+
+  /** Returns the terminal ID for the active instance, falling back to the static default. */
+  private getActiveTerminalId(): string {
+    try {
+      const active = this.instanceStore?.getActive();
+      if (active?.runtime.terminalKey) {
+        return active.runtime.terminalKey;
+      }
+      return `opencode-instance-${active?.config.id}`;
+    } catch {
+      return ExtensionLifecycle.TERMINAL_ID;
+    }
+  }
 
   async activate(context: vscode.ExtensionContext): Promise<void> {
     const logger = OutputChannelService.getInstance();
@@ -55,6 +73,7 @@ export class ExtensionLifecycle {
 
       // Initialize multi-instance support
       this.instanceStore = new InstanceStore();
+      this.portManager = new PortManager(this.instanceStore);
       this.instanceRegistry = new InstanceRegistry(context);
       this.instanceRegistry.hydrate(this.instanceStore);
 
@@ -68,6 +87,19 @@ export class ExtensionLifecycle {
       this.instanceQuickPick = new InstanceQuickPick(
         this.instanceStore,
         this.instanceDiscoveryService,
+      );
+
+      // Initialize instance controller for spawn/connect/kill
+      const connectionResolver = new ConnectionResolver(
+        this.instanceStore,
+        this.instanceDiscoveryService,
+      );
+      this.instanceController = new InstanceController(
+        this.terminalManager,
+        this.instanceStore,
+        this.portManager,
+        logger.getChannel(),
+        connectionResolver,
       );
 
       // Handle terminal closure for cleanup
@@ -101,6 +133,8 @@ export class ExtensionLifecycle {
       this.instancesDashboardProvider = new InstancesDashboardProvider(
         context,
         this.instanceStore,
+        this.instanceController,
+        logger.getChannel(),
       );
       const dashboardProvider = vscode.window.registerWebviewViewProvider(
         InstancesDashboardProvider.viewType,
@@ -156,7 +190,7 @@ export class ExtensionLifecycle {
         if (editor && !editor.selection.isEmpty) {
           const selectedText = editor.document.getText(editor.selection);
           this.terminalManager?.writeToTerminal(
-            ExtensionLifecycle.TERMINAL_ID,
+            this.getActiveTerminalId(),
             selectedText + "\n",
           );
 
@@ -184,7 +218,7 @@ export class ExtensionLifecycle {
           const fileRef =
             this.contextSharingService.formatFileRefWithLineNumbers(editor);
           this.terminalManager?.writeToTerminal(
-            ExtensionLifecycle.TERMINAL_ID,
+            this.getActiveTerminalId(),
             fileRef + " ",
           );
 
@@ -231,7 +265,7 @@ export class ExtensionLifecycle {
 
         if (openFiles) {
           this.terminalManager?.writeToTerminal(
-            ExtensionLifecycle.TERMINAL_ID,
+            this.getActiveTerminalId(),
             openFiles + " ",
           );
 
@@ -284,7 +318,7 @@ export class ExtensionLifecycle {
           const allRefs = fileRefs.join(" ");
 
           this.terminalManager?.writeToTerminal(
-            ExtensionLifecycle.TERMINAL_ID,
+            this.getActiveTerminalId(),
             allRefs + " ",
           );
 
@@ -356,6 +390,15 @@ export class ExtensionLifecycle {
           };
 
           this.instanceStore.upsert(newRecord);
+
+          // Actually open the workspace in a new VS Code window
+          if (newRecord.config.workspaceUri) {
+            vscode.commands.executeCommand(
+              "vscode.openFolder",
+              vscode.Uri.parse(newRecord.config.workspaceUri),
+              true,
+            );
+          }
           vscode.window.showInformationMessage(`Opened in new window: ${newRecord.config.label}`);
         } catch (error) {
           this.outputChannelService?.error(
@@ -396,6 +439,9 @@ export class ExtensionLifecycle {
           };
 
           this.instanceStore.upsert(newRecord);
+
+          // Actually spawn the OpenCode process for this instance
+          await this.instanceController?.spawn(newId);
           vscode.window.showInformationMessage(`Spawned OpenCode for workspace: ${newRecord.config.label}`);
         } catch (error) {
           this.outputChannelService?.error(
@@ -434,7 +480,7 @@ export class ExtensionLifecycle {
       throw new Error("OpenCode provider is not initialized");
     }
 
-    if (!this.terminalManager.getTerminal(ExtensionLifecycle.TERMINAL_ID)) {
+    if (!this.terminalManager.getTerminal(this.getActiveTerminalId())) {
       const sentByDiscovery =
         await this.trySendPromptViaDiscoveredInstance(prompt);
       if (sentByDiscovery) {
@@ -453,13 +499,13 @@ export class ExtensionLifecycle {
           `Failed to send prompt via HTTP API, falling back to terminal input: ${error instanceof Error ? error.message : String(error)}`,
         );
         this.terminalManager.writeToTerminal(
-          ExtensionLifecycle.TERMINAL_ID,
+          this.getActiveTerminalId(),
           `${prompt}\n`,
         );
       }
     } else {
       this.terminalManager.writeToTerminal(
-        ExtensionLifecycle.TERMINAL_ID,
+          this.getActiveTerminalId(),
         `${prompt}\n`,
       );
     }
@@ -524,7 +570,7 @@ export class ExtensionLifecycle {
         : `@${cwd}`;
 
     this.terminalManager?.writeToTerminal(
-      ExtensionLifecycle.TERMINAL_ID,
+      this.getActiveTerminalId(),
       reference + " ",
     );
 
