@@ -9,6 +9,17 @@ import { ContextManager } from "../services/ContextManager";
 import { OutputChannelService } from "../services/OutputChannelService";
 import { InstanceDiscoveryService } from "../services/InstanceDiscoveryService";
 import { OpenCodeApiClient } from "../services/OpenCodeApiClient";
+import { InstanceStore } from "../services/InstanceStore";
+import { InstanceRegistry } from "../services/InstanceRegistry";
+import { InstancesDashboardProvider } from "../providers/InstancesDashboardProvider";
+import { InstanceQuickPick } from "../services/InstanceQuickPick";
+import { InstanceController } from "../services/InstanceController";
+import { PortManager } from "../services/PortManager";
+import { ConnectionResolver } from "../services/ConnectionResolver";
+
+// Module-level state for batching file sends from context menu
+let fileSendAccumulator: vscode.Uri[] = [];
+let fileSendTimeout: NodeJS.Timeout | undefined;
 
 /**
  * Manages extension activation, service initialization, and cleanup.
@@ -23,8 +34,27 @@ export class ExtensionLifecycle {
   private contextManager: ContextManager | undefined;
   private instanceDiscoveryService: InstanceDiscoveryService | undefined;
   private codeActionProvider: OpenCodeCodeActionProvider | undefined;
+  private instanceStore: InstanceStore | undefined;
+  private instanceRegistry: InstanceRegistry | undefined;
+  private instancesDashboardProvider: InstancesDashboardProvider | undefined;
+  private instanceQuickPick: InstanceQuickPick | undefined;
+  private instanceController: InstanceController | undefined;
+  private portManager: PortManager | undefined;
 
   private static readonly TERMINAL_ID = "opencode-main";
+
+  /** Returns the terminal ID for the active instance, falling back to the static default. */
+  private getActiveTerminalId(): string {
+    try {
+      const active = this.instanceStore?.getActive();
+      if (active?.runtime.terminalKey) {
+        return active.runtime.terminalKey;
+      }
+      return `opencode-instance-${active?.config.id}`;
+    } catch {
+      return ExtensionLifecycle.TERMINAL_ID;
+    }
+  }
 
   async activate(context: vscode.ExtensionContext): Promise<void> {
     const logger = OutputChannelService.getInstance();
@@ -38,14 +68,39 @@ export class ExtensionLifecycle {
       this.captureManager = new OutputCaptureManager();
       this.contextSharingService = new ContextSharingService();
       this.outputChannelService = logger;
-      this.statusBarManager = new StatusBarManager();
       this.contextManager = new ContextManager(this.outputChannelService);
       this.instanceDiscoveryService = new InstanceDiscoveryService();
 
+      // Initialize multi-instance support
+      this.instanceStore = new InstanceStore();
+      this.portManager = new PortManager(this.instanceStore);
+      this.instanceRegistry = new InstanceRegistry(context);
+      this.instanceRegistry.hydrate(this.instanceStore);
+
+      // Initialize status bar with instance store for live updates
+      this.statusBarManager = new StatusBarManager(this.instanceStore);
       this.statusBarManager.show();
       context.subscriptions.push(this.statusBarManager);
       context.subscriptions.push(this.contextManager);
       context.subscriptions.push(this.instanceDiscoveryService);
+
+      this.instanceQuickPick = new InstanceQuickPick(
+        this.instanceStore,
+        this.instanceDiscoveryService,
+      );
+
+      // Initialize instance controller for spawn/connect/kill
+      const connectionResolver = new ConnectionResolver(
+        this.instanceStore,
+        this.instanceDiscoveryService,
+      );
+      this.instanceController = new InstanceController(
+        this.terminalManager,
+        this.instanceStore,
+        this.portManager,
+        logger.getChannel(),
+        connectionResolver,
+      );
 
       // Handle terminal closure for cleanup
       context.subscriptions.push(
@@ -59,6 +114,7 @@ export class ExtensionLifecycle {
         context,
         this.terminalManager,
         this.captureManager,
+        this.instanceStore,
       );
 
       // Register webview provider
@@ -72,6 +128,19 @@ export class ExtensionLifecycle {
         },
       );
       context.subscriptions.push(provider);
+
+      // Register instances dashboard provider
+      this.instancesDashboardProvider = new InstancesDashboardProvider(
+        context,
+        this.instanceStore,
+        this.instanceController,
+        logger.getChannel(),
+      );
+      const dashboardProvider = vscode.window.registerWebviewViewProvider(
+        InstancesDashboardProvider.viewType,
+        this.instancesDashboardProvider,
+      );
+      context.subscriptions.push(dashboardProvider);
 
       // Register commands
       this.registerCommands(context);
@@ -121,7 +190,7 @@ export class ExtensionLifecycle {
         if (editor && !editor.selection.isEmpty) {
           const selectedText = editor.document.getText(editor.selection);
           this.terminalManager?.writeToTerminal(
-            ExtensionLifecycle.TERMINAL_ID,
+            this.getActiveTerminalId(),
             selectedText + "\n",
           );
 
@@ -149,7 +218,7 @@ export class ExtensionLifecycle {
           const fileRef =
             this.contextSharingService.formatFileRefWithLineNumbers(editor);
           this.terminalManager?.writeToTerminal(
-            ExtensionLifecycle.TERMINAL_ID,
+            this.getActiveTerminalId(),
             fileRef + " ",
           );
 
@@ -196,7 +265,7 @@ export class ExtensionLifecycle {
 
         if (openFiles) {
           this.terminalManager?.writeToTerminal(
-            ExtensionLifecycle.TERMINAL_ID,
+            this.getActiveTerminalId(),
             openFiles + " ",
           );
 
@@ -218,26 +287,57 @@ export class ExtensionLifecycle {
     // Send file/folder from explorer context menu
     const sendFileToTerminalCommand = vscode.commands.registerCommand(
       "opencodeTui.sendFileToTerminal",
-      (uri: vscode.Uri) => {
-        if (uri && this.contextSharingService) {
-          const fileRef = this.contextSharingService.formatFileRef(uri);
+      (uri: vscode.Uri | vscode.Uri[]) => {
+        if (!uri || !this.contextSharingService) {
+          return;
+        }
+
+        // Handle array case (if VS Code ever passes it)
+        const uris = Array.isArray(uri) ? uri : [uri];
+
+        fileSendAccumulator.push(...uris);
+
+        if (fileSendTimeout) {
+          clearTimeout(fileSendTimeout);
+        }
+
+        fileSendTimeout = setTimeout(() => {
+          if (fileSendAccumulator.length === 0) {
+            return;
+          }
+
+          const uniqueUris = [
+            ...new Map(
+              fileSendAccumulator.map((u: vscode.Uri) => [u.fsPath, u]),
+            ).values(),
+          ];
+
+          const fileRefs = uniqueUris.map((u: vscode.Uri) =>
+            this.contextSharingService!.formatFileRef(u),
+          );
+          const allRefs = fileRefs.join(" ");
+
           this.terminalManager?.writeToTerminal(
-            ExtensionLifecycle.TERMINAL_ID,
-            fileRef + " ",
+            this.getActiveTerminalId(),
+            allRefs + " ",
           );
 
-          // Auto-focus sidebar if enabled
           const config = vscode.workspace.getConfiguration("opencodeTui");
           if (config.get<boolean>("autoFocusOnSend", true)) {
             vscode.commands.executeCommand("opencodeTui.focus");
-            // Also focus the terminal inside the webview
             setTimeout(() => {
               this.tuiProvider?.focus();
             }, 100);
           }
 
-          vscode.window.showInformationMessage(`Sent ${fileRef}`);
-        }
+          const message =
+            uniqueUris.length > 1
+              ? `Sent ${uniqueUris.length} files`
+              : `Sent ${fileRefs[0]}`;
+          vscode.window.showInformationMessage(message);
+
+          fileSendAccumulator = [];
+        }, 100);
       },
     );
 
@@ -267,6 +367,100 @@ export class ExtensionLifecycle {
       },
     );
 
+    // Open in new window
+    const openInNewWindowCommand = vscode.commands.registerCommand(
+      "opencode.openInNewWindow",
+      async () => {
+        if (!this.instanceStore) {
+          vscode.window.showErrorMessage("Instance store is not initialized");
+          return;
+        }
+
+        try {
+          const active = this.instanceStore.getActive();
+          const newId = `${Date.now()}`;
+          const newRecord = {
+            config: {
+              id: newId,
+              workspaceUri: active.config.workspaceUri,
+              label: `${active.config.label || "OpenCode"} (New Window)`,
+            },
+            runtime: {},
+            state: "disconnected" as const,
+          };
+
+          this.instanceStore.upsert(newRecord);
+
+          // Actually open the workspace in a new VS Code window
+          if (newRecord.config.workspaceUri) {
+            vscode.commands.executeCommand(
+              "vscode.openFolder",
+              vscode.Uri.parse(newRecord.config.workspaceUri),
+              true,
+            );
+          }
+          vscode.window.showInformationMessage(`Opened in new window: ${newRecord.config.label}`);
+        } catch (error) {
+          this.outputChannelService?.error(
+            `Failed to open in new window: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          vscode.window.showErrorMessage(
+            `Failed to open in new window: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      },
+    );
+
+    // Spawn for workspace
+    const spawnForWorkspaceCommand = vscode.commands.registerCommand(
+      "opencode.spawnForWorkspace",
+      async (uri?: vscode.Uri) => {
+        if (!this.instanceStore) {
+          vscode.window.showErrorMessage("Instance store is not initialized");
+          return;
+        }
+
+        try {
+          const workspaceUri = uri?.toString() || vscode.workspace.workspaceFolders?.[0]?.uri.toString();
+          if (!workspaceUri) {
+            vscode.window.showWarningMessage("No workspace folder available");
+            return;
+          }
+
+          const newId = `${Date.now()}`;
+          const newRecord = {
+            config: {
+              id: newId,
+              workspaceUri,
+              label: `OpenCode (${vscode.workspace.name || "Workspace"})`,
+            },
+            runtime: {},
+            state: "disconnected" as const,
+          };
+
+          this.instanceStore.upsert(newRecord);
+
+          // Actually spawn the OpenCode process for this instance
+          await this.instanceController?.spawn(newId);
+          vscode.window.showInformationMessage(`Spawned OpenCode for workspace: ${newRecord.config.label}`);
+        } catch (error) {
+          this.outputChannelService?.error(
+            `Failed to spawn for workspace: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          vscode.window.showErrorMessage(
+            `Failed to spawn for workspace: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      },
+    );
+
+    const selectInstanceCommand = vscode.commands.registerCommand(
+      "opencodeTui.selectInstance",
+      () => {
+        this.instanceQuickPick?.show();
+      },
+    );
+
     context.subscriptions.push(
       startCommand,
       sendToTerminalCommand,
@@ -275,6 +469,9 @@ export class ExtensionLifecycle {
       sendFileToTerminalCommand,
       restartCommand,
       pasteCommand,
+      openInNewWindowCommand,
+      spawnForWorkspaceCommand,
+      selectInstanceCommand,
     );
   }
 
@@ -283,7 +480,7 @@ export class ExtensionLifecycle {
       throw new Error("OpenCode provider is not initialized");
     }
 
-    if (!this.terminalManager.getTerminal(ExtensionLifecycle.TERMINAL_ID)) {
+    if (!this.terminalManager.getTerminal(this.getActiveTerminalId())) {
       const sentByDiscovery =
         await this.trySendPromptViaDiscoveredInstance(prompt);
       if (sentByDiscovery) {
@@ -302,13 +499,13 @@ export class ExtensionLifecycle {
           `Failed to send prompt via HTTP API, falling back to terminal input: ${error instanceof Error ? error.message : String(error)}`,
         );
         this.terminalManager.writeToTerminal(
-          ExtensionLifecycle.TERMINAL_ID,
+          this.getActiveTerminalId(),
           `${prompt}\n`,
         );
       }
     } else {
       this.terminalManager.writeToTerminal(
-        ExtensionLifecycle.TERMINAL_ID,
+          this.getActiveTerminalId(),
         `${prompt}\n`,
       );
     }
@@ -373,7 +570,7 @@ export class ExtensionLifecycle {
         : `@${cwd}`;
 
     this.terminalManager?.writeToTerminal(
-      ExtensionLifecycle.TERMINAL_ID,
+      this.getActiveTerminalId(),
       reference + " ",
     );
 
@@ -422,6 +619,20 @@ export class ExtensionLifecycle {
     if (this.instanceDiscoveryService) {
       this.instanceDiscoveryService.dispose();
       this.instanceDiscoveryService = undefined;
+    }
+
+    if (this.instanceRegistry) {
+      this.instanceRegistry.dispose();
+      this.instanceRegistry = undefined;
+    }
+
+    if (this.instancesDashboardProvider) {
+      this.instancesDashboardProvider.dispose();
+      this.instancesDashboardProvider = undefined;
+    }
+
+    if (this.instanceStore) {
+      this.instanceStore = undefined;
     }
 
     this.codeActionProvider = undefined;

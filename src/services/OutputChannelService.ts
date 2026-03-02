@@ -37,6 +37,13 @@ export class OutputChannelService {
     return OutputChannelService.instance;
   }
 
+  /**
+   * Returns the underlying output channel for passing to other services.
+   */
+  public getChannel(): vscode.LogOutputChannel {
+    return this.channel;
+  }
+
   public static resetInstance(): void {
     OutputChannelService.instance = undefined;
   }
