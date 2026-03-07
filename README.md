@@ -16,6 +16,196 @@ Automatically render OpenCode TUI in VS Code: sidebar with full terminal support
 - **Drag & Drop Support**: Hold Shift and drag files/folders to send as references
 - **Context Menu Integration**: Right-click files in Explorer or text in Editor to send to OpenCode
 - **Configurable**: Customize command, font, terminal settings, and HTTP API behavior
+- **Multi-CLI Support**: Run multiple AI tools in separate tabs (Claude, Codex, Gemini, Aider)
+
+## Multi-CLI Support
+
+The extension supports running multiple AI CLI tools simultaneously in separate tabs. This lets you compare responses from different AI assistants or use the best tool for specific tasks.
+
+### Supported Tools
+
+| Tool       | CLI Command | Description                         |
+| ---------- | ----------- | ----------------------------------- |
+| **Claude** | `claude`    | Anthropic's Claude AI assistant     |
+| **Codex**  | `codex`     | OpenAI's Codex CLI for coding tasks |
+| **Gemini** | `gemini`    | Google's Gemini CLI                 |
+| **Aider**  | `aider`     | AI pair programming assistant       |
+
+### Tab Management
+
+Manage multiple CLI tabs directly from the sidebar:
+
+- **Add New Tab** - Click the "+" button to create a new tab
+- **Switch Tabs** - Click any tab to switch between active CLIs
+- **Close Tab** - Click the "x" on a tab or use the context menu
+- **Tab Persistence** - Tab configuration is preserved across VS Code: sessions
+
+Each tab runs an independent terminal process with its own CLI configuration.
+
+### Per-Tab Configuration
+
+Each tab can be configured with different settings:
+
+| Setting     | Description                                       |
+| ----------- | ------------------------------------------------- |
+| `command`   | The CLI command to run in this tab                |
+| `name`      | Custom display name for the tab                   |
+| `color`     | Tab color indicator for visual distinction        |
+| `autoStart` | Whether to auto-start this CLI when the tab opens |
+
+### Configuration Examples
+
+#### Claude Configuration
+
+```json
+{
+  "opencodeTui.tabs": [
+    {
+      "id": "claude",
+      "name": "Claude",
+      "command": "claude",
+      "color": "#CC785C"
+    }
+  ]
+}
+```
+
+#### Codex Configuration
+
+```json
+{
+  "opencodeTui.tabs": [
+    {
+      "id": "codex",
+      "name": "Codex",
+      "command": "codex",
+      "color": "#74AA9C"
+    }
+  ]
+}
+```
+
+#### Gemini Configuration
+
+```json
+{
+  "opencodeTui.tabs": [
+    {
+      "id": "gemini",
+      "name": "Gemini",
+      "command": "gemini",
+      "color": "#4285F4"
+    }
+  ]
+}
+```
+
+#### Aider Configuration
+
+```json
+{
+  "opencodeTui.tabs": [
+    {
+      "id": "aider",
+      "name": "Aider",
+      "command": "aider",
+      "color": "#FF6B6B"
+    }
+  ]
+}
+```
+
+#### Multi-Tool Setup
+
+Configure multiple tools in separate tabs:
+
+```json
+{
+  "opencodeTui.tabs": [
+    {
+      "id": "opencode",
+      "name": "OpenCode",
+      "command": "opencode -c",
+      "color": "#6366F1",
+      "autoStart": true
+    },
+    {
+      "id": "claude",
+      "name": "Claude",
+      "command": "claude",
+      "color": "#CC785C",
+      "autoStart": false
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "command": "codex",
+      "color": "#74AA9C",
+      "autoStart": false
+    }
+  ]
+}
+```
+
+### Keyboard Shortcuts for Tabs
+
+| Shortcut                       | Action          | Description                |
+| ------------------------------ | --------------- | -------------------------- |
+| `Cmd+1-9` / `Ctrl+1-9`         | Switch to tab N | Jump directly to tab 1-9   |
+| `Cmd+Shift+T` / `Ctrl+Shift+T` | New Tab         | Create a new CLI tab       |
+| `Cmd+W` / `Ctrl+W`             | Close Tab       | Close the current tab      |
+| `Cmd+Shift+[` / `Ctrl+Shift+[` | Previous Tab    | Switch to the previous tab |
+| `Cmd+Shift+]` / `Ctrl+Shift+]` | Next Tab        | Switch to the next tab     |
+
+## Keyboard Shortcuts Reference
+
+Complete list of all keyboard shortcuts available in the extension:
+
+### Tab Management
+
+| Shortcut (macOS) | Shortcut (Windows/Linux) | Action            | Command ID                |
+| ---------------- | ------------------------ | ----------------- | ------------------------- |
+| `Cmd+Shift+T`    | `Ctrl+Shift+T`           | Create new tab    | `opencodeTui.newTab`      |
+| `Cmd+W`          | `Ctrl+W`                 | Close current tab | `opencodeTui.closeTab`    |
+| `Cmd+1-9`        | `Ctrl+1-9`               | Switch to tab 1-9 | `opencodeTui.switchTab`   |
+| `Cmd+Shift+[`    | `Ctrl+Shift+[`           | Previous tab      | `opencodeTui.previousTab` |
+| `Cmd+Shift+]`    | `Ctrl+Shift+]`           | Next tab          | `opencodeTui.nextTab`     |
+
+### File References
+
+| Shortcut (macOS) | Shortcut (Windows/Linux) | Action              | Command ID                      |
+| ---------------- | ------------------------ | ------------------- | ------------------------------- |
+| `Cmd+Alt+L`      | `Ctrl+Alt+L`             | Send file reference | `opencodeTui.sendFileReference` |
+| `Cmd+Alt+A`      | `Ctrl+Alt+A`             | Send all open files | `opencodeTui.sendAllOpenFiles`  |
+
+### Terminal Control
+
+| Shortcut (macOS) | Shortcut (Windows/Linux) | Action         | Command ID                  |
+| ---------------- | ------------------------ | -------------- | --------------------------- |
+| `Cmd+Alt+O`      | `Ctrl+Alt+O`             | Open sidebar   | `opencodeTui.open`          |
+| `Cmd+Shift+C`    | `Ctrl+Shift+C`           | Clear terminal | `opencodeTui.clearTerminal` |
+| `Cmd+Shift+R`    | `Ctrl+Shift+R`           | Restart CLI    | `opencodeTui.restart`       |
+
+### Custom Keybindings
+
+You can customize any shortcut in VS Code: settings:
+
+```json
+{
+  "keybindings": [
+    {
+      "command": "opencodeTui.sendFileReference",
+      "key": "cmd+shift+l",
+      "when": "editorTextFocus"
+    },
+    {
+      "command": "opencodeTui.newTab",
+      "key": "cmd+t",
+      "when": "opencodeTuiFocus"
+    }
+  ]
+}
+```
 
 ## Architecture
 
@@ -101,6 +291,14 @@ npx @vscode/vsce package
 - **OpenCode TUI: Restart OpenCode** - Restart the OpenCode process
 - **OpenCode TUI: Clear Terminal** - Clear the terminal display
 
+### Tab Commands
+
+- **OpenCode TUI: New Tab** - Create a new CLI tab
+- **OpenCode TUI: Close Tab** - Close the current tab
+- **OpenCode TUI: Next Tab** - Switch to the next tab
+- **OpenCode TUI: Previous Tab** - Switch to the previous tab
+- **OpenCode TUI: Switch to Tab N** - Jump directly to tab 1-9
+
 ### File Reference Commands
 
 - **Send File Reference** (`Cmd+Alt+L` / `Ctrl+Alt+L`) - Send current file with line numbers
@@ -178,8 +376,13 @@ Available settings in VS Code: settings (`Cmd+,` / `Ctrl+,`):
 | `opencodeTui.enableHttpApi`    | boolean | `true`          | Enable HTTP API for OpenCode communication              |
 | `opencodeTui.httpTimeout`      | number  | `5000`          | HTTP API request timeout in ms (1000-30000)             |
 | `opencodeTui.autoShareContext` | boolean | `true`          | Auto-share editor context with OpenCode                 |
+| `opencodeTui.tabs`             | array   | `[]`            | Array of tab configurations for multi-CLI support       |
+| `opencodeTui.defaultTab`       | string  | `"opencode"`    | Default tab to open when sidebar is activated           |
+| `opencodeTui.persistTabs`      | boolean | `true`          | Save and restore tabs across VS Code: sessions          |
 
 ### Example Configuration
+
+#### Basic Setup (Single CLI)
 
 ```json
 {
@@ -193,6 +396,50 @@ Available settings in VS Code: settings (`Cmd+,` / `Ctrl+,`):
   "opencodeTui.enableHttpApi": true,
   "opencodeTui.httpTimeout": 5000,
   "opencodeTui.autoShareContext": true
+}
+```
+
+#### Multi-CLI Setup (Multiple Tabs)
+
+```json
+{
+  "opencodeTui.autoStart": true,
+  "opencodeTui.defaultTab": "opencode",
+  "opencodeTui.persistTabs": true,
+  "opencodeTui.fontSize": 14,
+  "opencodeTui.fontFamily": "monospace",
+  "opencodeTui.enableHttpApi": true,
+  "opencodeTui.httpTimeout": 5000,
+  "opencodeTui.tabs": [
+    {
+      "id": "opencode",
+      "name": "OpenCode",
+      "command": "opencode -c",
+      "color": "#6366F1",
+      "autoStart": true
+    },
+    {
+      "id": "claude",
+      "name": "Claude",
+      "command": "claude",
+      "color": "#CC785C",
+      "autoStart": false
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "command": "codex",
+      "color": "#74AA9C",
+      "autoStart": false
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini",
+      "command": "gemini",
+      "color": "#4285F4",
+      "autoStart": false
+    }
+  ]
 }
 ```
 

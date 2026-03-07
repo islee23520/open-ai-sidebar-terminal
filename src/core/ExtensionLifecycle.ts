@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { CliToolType } from "../types";
 import { OpenCodeTuiProvider } from "../providers/OpenCodeTuiProvider";
 import { OpenCodeCodeActionProvider } from "../providers/CodeActionProvider";
 import { TerminalManager } from "../terminals/TerminalManager";
@@ -282,7 +283,10 @@ export class ExtensionLifecycle {
             }, 100);
           }
 
-          vscode.window.setStatusBarMessage("$(check) Sent all open files", 3000);
+          vscode.window.setStatusBarMessage(
+            "$(check) Sent all open files",
+            3000,
+          );
         }
       },
     );
@@ -409,7 +413,9 @@ export class ExtensionLifecycle {
               true,
             );
           }
-          vscode.window.showInformationMessage(`Opened in new window: ${newRecord.config.label}`);
+          vscode.window.showInformationMessage(
+            `Opened in new window: ${newRecord.config.label}`,
+          );
         } catch (error) {
           this.outputChannelService?.error(
             `Failed to open in new window: ${error instanceof Error ? error.message : String(error)}`,
@@ -431,7 +437,9 @@ export class ExtensionLifecycle {
         }
 
         try {
-          const workspaceUri = uri?.toString() || vscode.workspace.workspaceFolders?.[0]?.uri.toString();
+          const workspaceUri =
+            uri?.toString() ||
+            vscode.workspace.workspaceFolders?.[0]?.uri.toString();
           if (!workspaceUri) {
             vscode.window.showWarningMessage("No workspace folder available");
             return;
@@ -452,7 +460,9 @@ export class ExtensionLifecycle {
 
           // Actually spawn the OpenCode process for this instance
           await this.instanceController?.spawn(newId);
-          vscode.window.showInformationMessage(`Spawned OpenCode for workspace: ${newRecord.config.label}`);
+          vscode.window.showInformationMessage(
+            `Spawned OpenCode for workspace: ${newRecord.config.label}`,
+          );
         } catch (error) {
           this.outputChannelService?.error(
             `Failed to spawn for workspace: ${error instanceof Error ? error.message : String(error)}`,
@@ -471,6 +481,68 @@ export class ExtensionLifecycle {
       },
     );
 
+    const createTabCommand = vscode.commands.registerCommand(
+      "opencodeTui.createTab",
+      async () => {
+        const tools: { label: string; id: CliToolType }[] = [
+          { label: "OpenCode", id: "opencode" },
+          { label: "Claude", id: "claude" },
+          { label: "Codex", id: "codex" },
+          { label: "Gemini", id: "gemini" },
+          { label: "Aider", id: "aider" },
+        ];
+
+        const selected = await vscode.window.showQuickPick(tools, {
+          placeHolder: "Select a tool to create a new tab",
+        });
+
+        if (selected) {
+          await this.tuiProvider?.createTab(selected.id);
+        }
+      },
+    );
+
+    const createOpencodeTabCommand = vscode.commands.registerCommand(
+      "opencodeTui.createTab.opencode",
+      () => this.tuiProvider?.createTab("opencode"),
+    );
+    const createClaudeTabCommand = vscode.commands.registerCommand(
+      "opencodeTui.createTab.claude",
+      () => this.tuiProvider?.createTab("claude"),
+    );
+    const createCodexTabCommand = vscode.commands.registerCommand(
+      "opencodeTui.createTab.codex",
+      () => this.tuiProvider?.createTab("codex"),
+    );
+    const createGeminiTabCommand = vscode.commands.registerCommand(
+      "opencodeTui.createTab.gemini",
+      () => this.tuiProvider?.createTab("gemini"),
+    );
+    const createAiderTabCommand = vscode.commands.registerCommand(
+      "opencodeTui.createTab.aider",
+      () => this.tuiProvider?.createTab("aider"),
+    );
+
+    const closeTabCommand = vscode.commands.registerCommand(
+      "opencodeTui.closeTab",
+      () => {
+        const activeTab = this.tuiProvider?.getActiveTab();
+        if (activeTab) {
+          this.tuiProvider?.closeTab(activeTab.id);
+        }
+      },
+    );
+
+    const nextTabCommand = vscode.commands.registerCommand(
+      "opencodeTui.nextTab",
+      () => this.tuiProvider?.nextTab(),
+    );
+
+    const previousTabCommand = vscode.commands.registerCommand(
+      "opencodeTui.previousTab",
+      () => this.tuiProvider?.previousTab(),
+    );
+
     context.subscriptions.push(
       startCommand,
       sendToTerminalCommand,
@@ -482,6 +554,15 @@ export class ExtensionLifecycle {
       openInNewWindowCommand,
       spawnForWorkspaceCommand,
       selectInstanceCommand,
+      createTabCommand,
+      createOpencodeTabCommand,
+      createClaudeTabCommand,
+      createCodexTabCommand,
+      createGeminiTabCommand,
+      createAiderTabCommand,
+      closeTabCommand,
+      nextTabCommand,
+      previousTabCommand,
     );
   }
 
@@ -515,7 +596,7 @@ export class ExtensionLifecycle {
       }
     } else {
       this.terminalManager.writeToTerminal(
-          this.getActiveTerminalId(),
+        this.getActiveTerminalId(),
         `${prompt}\n`,
       );
     }

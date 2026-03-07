@@ -18,7 +18,7 @@ import { PortManager } from "../services/PortManager";
 import { ContextSharingService } from "../services/ContextSharingService";
 import { OutputChannelService } from "../services/OutputChannelService";
 import { InstanceId, InstanceStore } from "../services/InstanceStore";
-import { TabManager } from "../services/TabManager";
+import { Tab, TabManager } from "../services/TabManager";
 import { ALLOWED_IMAGE_TYPES, CliToolType, MAX_IMAGE_SIZE } from "../types";
 
 interface ToolRuntimeConfig {
@@ -296,6 +296,10 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
     await this.createTab("opencode");
   }
 
+  public getActiveTab(): Tab | null {
+    return this.tabManager.getActiveTab();
+  }
+
   public async createTab(toolId: CliToolType): Promise<void> {
     const tab = this.tabManager.createTab(toolId);
     const adapter = this.adapterFactory.getAdapter(toolId);
@@ -381,6 +385,22 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
     }
 
     await this.switchTab(nextActive.id);
+  }
+
+  public async nextTab(): Promise<void> {
+    this.tabManager.nextTab();
+    const active = this.tabManager.getActiveTab();
+    if (active) {
+      await this.switchTab(active.id);
+    }
+  }
+
+  public async previousTab(): Promise<void> {
+    this.tabManager.previousTab();
+    const active = this.tabManager.getActiveTab();
+    if (active) {
+      await this.switchTab(active.id);
+    }
   }
 
   public async restartOpenCode(): Promise<void> {
