@@ -93,6 +93,99 @@ describe("TmuxSessionManager", () => {
     ]);
   });
 
+  it("prefers attaching to exact workspace path match over creating a new session", async () => {
+    mockExecSequence([
+      {
+        stdout: ["legacy-repo-a\t0\t/workspaces/repo-a"].join("\n"),
+      },
+      {
+        stdout: "",
+      },
+    ]);
+
+    const result = await manager.ensureSession("repo-a", "/workspaces/repo-a");
+
+    expect(result).toEqual({
+      action: "attached",
+      session: {
+        id: "legacy-repo-a",
+        name: "legacy-repo-a",
+        workspace: "repo-a",
+        isActive: true,
+      },
+    });
+    expect(execFile).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(execFile).mock.calls[1]?.[1]).toEqual([
+      "attach-session",
+      "-t",
+      "legacy-repo-a",
+    ]);
+  });
+
+  it("avoids wrong-session attachment on name collision by preferring workspace path", async () => {
+    mockExecSequence([
+      {
+        stdout: [
+          "repo-a\t0\t/workspaces/repo-a-archive",
+          "repo-a-current\t0\t/workspaces/repo-a",
+        ].join("\n"),
+      },
+      {
+        stdout: "",
+      },
+    ]);
+
+    const result = await manager.ensureSession("repo-a", "/workspaces/repo-a");
+
+    expect(result).toEqual({
+      action: "attached",
+      session: {
+        id: "repo-a-current",
+        name: "repo-a-current",
+        workspace: "repo-a",
+        isActive: true,
+      },
+    });
+    expect(execFile).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(execFile).mock.calls[1]?.[1]).toEqual([
+      "attach-session",
+      "-t",
+      "repo-a-current",
+    ]);
+  });
+
+  it("creates a collision-safe session when stale metadata prevents workspace match", async () => {
+    mockExecSequence([
+      {
+        stdout: ["repo-a\t0\t", "repo-a-2\t0\t/workspaces/old"].join("\n"),
+      },
+      {
+        stdout: "",
+      },
+    ]);
+
+    const result = await manager.ensureSession("repo-a", "/workspaces/repo-a");
+
+    expect(result).toEqual({
+      action: "created",
+      session: {
+        id: "repo-a-3",
+        name: "repo-a-3",
+        workspace: "repo-a",
+        isActive: true,
+      },
+    });
+    expect(execFile).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(execFile).mock.calls[1]?.[1]).toEqual([
+      "new-session",
+      "-d",
+      "-s",
+      "repo-a-3",
+      "-c",
+      "/workspaces/repo-a",
+    ]);
+  });
+
   it("creates a detached session when no tmux sessions are available", async () => {
     const noServerError = Object.assign(new Error("no server running"), {
       code: 1,

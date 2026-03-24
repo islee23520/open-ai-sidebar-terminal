@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
 import { TmuxSession, TreeSnapshot } from "../webview/sidebar/types";
 
 const TMUX_LIST_FORMAT =
@@ -22,6 +22,11 @@ type ExecFileLike = (
   callback: ExecFileCallback,
 ) => void;
 
+interface DiscoveredSession {
+  session: TmuxSession;
+  workspacePath: string | undefined;
+}
+
 export class TmuxUnavailableError extends Error {
   constructor(message: string = "tmux is not installed") {
     super(message);
@@ -42,6 +47,11 @@ export class TmuxSessionManager {
   ) {}
 
   public async discoverSessions(): Promise<TmuxSession[]> {
+    const discoveredSessions = await this.discoverSessionDetails();
+    return discoveredSessions.map(({ session }) => session);
+  }
+
+  private async discoverSessionDetails(): Promise<DiscoveredSession[]> {
     try {
       const stdout = await this.runTmux([
         "list-sessions",
@@ -96,9 +106,14 @@ export class TmuxSessionManager {
     sessionName: string,
     workspacePath: string,
   ): Promise<EnsureTmuxSessionResult> {
-    const sessions = await this.discoverSessions();
-    const existingSession = sessions.find(
-      (session) => session.id === sessionName || session.name === sessionName,
+    const discoveredSessions = await this.discoverSessionDetails();
+    const exactWorkspaceMatches = discoveredSessions.filter((entry) =>
+      this.pathsMatch(entry.workspacePath, workspacePath),
+    );
+
+    const existingSession = this.pickPreferredSession(
+      exactWorkspaceMatches,
+      sessionName,
     );
 
     if (existingSession) {
@@ -112,13 +127,24 @@ export class TmuxSessionManager {
       };
     }
 
-    await this.createSession(sessionName, workspacePath);
+    const existingSessionNames = new Set(
+      discoveredSessions.map(({ session }) => session.id),
+    );
+    const sessionNameForCreate = this.resolveCollisionSafeSessionName(
+      sessionName,
+      existingSessionNames,
+    );
+
+    await this.createSession(sessionNameForCreate, workspacePath);
     return {
       action: "created",
       session: {
-        id: sessionName,
-        name: sessionName,
-        workspace: this.resolveWorkspaceName(workspacePath, sessionName),
+        id: sessionNameForCreate,
+        name: sessionNameForCreate,
+        workspace: this.resolveWorkspaceName(
+          workspacePath,
+          sessionNameForCreate,
+        ),
         isActive: true,
       },
     };
@@ -158,27 +184,113 @@ export class TmuxSessionManager {
     }
   }
 
-  private parseSessions(stdout: string): TmuxSession[] {
+  private parseSessions(stdout: string): DiscoveredSession[] {
     return stdout
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter((line) => line.length > 0)
-      .map((line) => {
+      .flatMap((line) => {
         const [name, attachedCount, sessionPath] = line.split("\t");
         const trimmedName = name?.trim();
 
         if (!trimmedName) {
-          return undefined;
+          return [];
         }
 
-        return {
-          id: trimmedName,
-          name: trimmedName,
-          workspace: this.resolveWorkspaceName(sessionPath, trimmedName),
-          isActive: Number(attachedCount) > 0,
-        } satisfies TmuxSession;
-      })
-      .filter((session): session is TmuxSession => Boolean(session));
+        return [
+          {
+            session: {
+              id: trimmedName,
+              name: trimmedName,
+              workspace: this.resolveWorkspaceName(sessionPath, trimmedName),
+              isActive: Number(attachedCount) > 0,
+            },
+            workspacePath: this.normalizeWorkspacePath(sessionPath),
+          } satisfies DiscoveredSession,
+        ];
+      });
+  }
+
+  private pickPreferredSession(
+    discoveredSessions: DiscoveredSession[],
+    preferredName: string,
+  ): TmuxSession | undefined {
+    if (discoveredSessions.length === 0) {
+      return undefined;
+    }
+
+    const exactNameMatch = discoveredSessions.find(
+      ({ session }) =>
+        session.id === preferredName || session.name === preferredName,
+    );
+    if (exactNameMatch) {
+      return exactNameMatch.session;
+    }
+
+    return discoveredSessions
+      .slice()
+      .sort((a, b) => a.session.id.localeCompare(b.session.id))[0]?.session;
+  }
+
+  private resolveCollisionSafeSessionName(
+    requestedName: string,
+    existingSessionNames: Set<string>,
+  ): string {
+    if (!existingSessionNames.has(requestedName)) {
+      return requestedName;
+    }
+
+    let suffix = 2;
+    while (existingSessionNames.has(`${requestedName}-${suffix}`)) {
+      suffix += 1;
+    }
+
+    return `${requestedName}-${suffix}`;
+  }
+
+  private pathsMatch(
+    discoveredWorkspacePath: string | undefined,
+    requestedWorkspacePath: string,
+  ): boolean {
+    const normalizedDiscoveredPath = this.normalizeWorkspacePath(
+      discoveredWorkspacePath,
+    );
+    const normalizedRequestedPath = this.normalizeWorkspacePath(
+      requestedWorkspacePath,
+    );
+
+    if (!normalizedDiscoveredPath || !normalizedRequestedPath) {
+      return false;
+    }
+
+    return normalizedDiscoveredPath === normalizedRequestedPath;
+  }
+
+  private normalizeWorkspacePath(
+    workspacePath: string | undefined,
+  ): string | undefined {
+    const trimmedPath = workspacePath?.trim() ?? "";
+    if (!trimmedPath) {
+      return undefined;
+    }
+
+    const hasDrivePrefix = /^[a-zA-Z]:[/\\]/.test(trimmedPath);
+    const withoutTrailingSlash = trimmedPath.replace(/[\\/]+$/, "");
+    const absolutePath =
+      hasDrivePrefix || withoutTrailingSlash.startsWith("/")
+        ? withoutTrailingSlash
+        : resolve(withoutTrailingSlash);
+    const normalizedSeparators = absolutePath.replace(/\\/g, "/");
+    const normalizedPath =
+      normalizedSeparators.length > 1
+        ? normalizedSeparators.replace(/\/+$/, "")
+        : normalizedSeparators;
+
+    if (process.platform === "win32" || process.platform === "darwin") {
+      return normalizedPath.toLowerCase();
+    }
+
+    return normalizedPath;
   }
 
   private resolveWorkspaceName(
