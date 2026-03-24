@@ -448,12 +448,53 @@ export class ExtensionLifecycle {
             return;
           }
 
+          const existingWorkspaceRecord = this.instanceStore
+            .getAll()
+            .find((record) => record.config.workspaceUri === workspaceUri);
+
+          const reusableStates = new Set<string>([
+            "connected",
+            "connecting",
+            "spawning",
+            "resolving",
+          ]);
+
+          if (
+            existingWorkspaceRecord &&
+            reusableStates.has(existingWorkspaceRecord.state)
+          ) {
+            this.instanceStore.setActive(existingWorkspaceRecord.config.id);
+            await vscode.commands.executeCommand("opencodeTui.focus");
+            vscode.window.showInformationMessage(
+              `Focused existing OpenCode for workspace: ${existingWorkspaceRecord.config.label || existingWorkspaceRecord.config.id}`,
+            );
+            return;
+          }
+
+          if (existingWorkspaceRecord) {
+            this.instanceStore.setActive(existingWorkspaceRecord.config.id);
+            await this.instanceController?.spawn(
+              existingWorkspaceRecord.config.id,
+            );
+            vscode.window.showInformationMessage(
+              `Spawned OpenCode for workspace: ${existingWorkspaceRecord.config.label || existingWorkspaceRecord.config.id}`,
+            );
+            return;
+          }
+
+          const config = vscode.workspace.getConfiguration("opencodeTui");
+          const configuredCommand = config.get<string>(
+            "command",
+            "opencode -c",
+          );
+
           const newId = `${Date.now()}`;
           const newRecord = {
             config: {
               id: newId,
               workspaceUri,
               label: `OpenCode (${vscode.workspace.name || "Workspace"})`,
+              command: configuredCommand,
             },
             runtime: {},
             state: "disconnected" as const,

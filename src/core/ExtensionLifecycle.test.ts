@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { ExtensionLifecycle } from "./ExtensionLifecycle";
 import { OutputChannelService } from "../services/OutputChannelService";
+import { InstanceStore } from "../services/InstanceStore";
 import type * as vscodeTypes from "../test/mocks/vscode";
 
 const vscode = await vi.importActual<typeof vscodeTypes>(
@@ -182,6 +183,109 @@ describe("ExtensionLifecycle", () => {
       );
 
       expect(fileCall).toBeDefined();
+    });
+
+    describe("opencode.spawnForWorkspace", () => {
+      const getSpawnForWorkspaceHandler = () => {
+        (lifecycle as any).registerCommands(mockContext);
+        const commandCall = vi
+          .mocked(vscode.commands.registerCommand)
+          .mock.calls.find((call) => call[0] === "opencode.spawnForWorkspace");
+
+        expect(commandCall).toBeDefined();
+        return commandCall?.[1] as (uri?: {
+          toString(): string;
+        }) => Promise<void>;
+      };
+
+      it("should focus reusable existing workspace instance instead of creating duplicate", async () => {
+        const workspaceUri = "file:///workspace/reused";
+        const instanceStore = new InstanceStore();
+        instanceStore.upsert({
+          config: {
+            id: "existing-workspace-instance",
+            workspaceUri,
+            label: "Existing Workspace",
+            command: "opencode --backend existing",
+          },
+          runtime: {},
+          state: "connected",
+        });
+
+        const spawnSpy = vi.fn().mockResolvedValue(undefined);
+        (lifecycle as any).instanceStore = instanceStore;
+        (lifecycle as any).instanceController = { spawn: spawnSpy };
+
+        const spawnForWorkspace = getSpawnForWorkspaceHandler();
+        await spawnForWorkspace({ toString: () => workspaceUri });
+
+        expect(spawnSpy).not.toHaveBeenCalled();
+        expect(instanceStore.getAll()).toHaveLength(1);
+        expect(instanceStore.getActive().config.id).toBe(
+          "existing-workspace-instance",
+        );
+        expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+          "opencodeTui.focus",
+        );
+      });
+
+      it("should spawn matching disconnected workspace instance instead of focus-only no-op", async () => {
+        const workspaceUri = "file:///workspace/disconnected";
+        const instanceStore = new InstanceStore();
+        instanceStore.upsert({
+          config: {
+            id: "disconnected-workspace-instance",
+            workspaceUri,
+            label: "Disconnected Workspace",
+            command: "opencode --backend existing",
+          },
+          runtime: {},
+          state: "disconnected",
+        });
+
+        const spawnSpy = vi.fn().mockResolvedValue(undefined);
+        (lifecycle as any).instanceStore = instanceStore;
+        (lifecycle as any).instanceController = { spawn: spawnSpy };
+
+        const spawnForWorkspace = getSpawnForWorkspaceHandler();
+        await spawnForWorkspace({ toString: () => workspaceUri });
+
+        expect(spawnSpy).toHaveBeenCalledTimes(1);
+        expect(spawnSpy).toHaveBeenCalledWith(
+          "disconnected-workspace-instance",
+        );
+        expect(instanceStore.getAll()).toHaveLength(1);
+        expect(instanceStore.getActive().config.id).toBe(
+          "disconnected-workspace-instance",
+        );
+      });
+
+      it("should persist configured command for new workspace instances before spawn", async () => {
+        const configuredCommand = "opencode --backend claude";
+        vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
+          get: vi.fn((key: string, defaultValue?: unknown) =>
+            key === "command" ? configuredCommand : defaultValue,
+          ),
+          update: vi.fn(),
+        } as any);
+
+        const instanceStore = new InstanceStore();
+        const spawnSpy = vi.fn().mockResolvedValue(undefined);
+        (lifecycle as any).instanceStore = instanceStore;
+        (lifecycle as any).instanceController = { spawn: spawnSpy };
+
+        const workspaceUri = "file:///workspace/new";
+        const spawnForWorkspace = getSpawnForWorkspaceHandler();
+        await spawnForWorkspace({ toString: () => workspaceUri });
+
+        expect(spawnSpy).toHaveBeenCalledTimes(1);
+        const spawnedId = spawnSpy.mock.calls[0]?.[0] as string;
+        const createdRecord = instanceStore.get(spawnedId);
+
+        expect(createdRecord).toBeDefined();
+        expect(createdRecord?.config.workspaceUri).toBe(workspaceUri);
+        expect(createdRecord?.config.command).toBe(configuredCommand);
+      });
     });
   });
 });

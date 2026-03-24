@@ -60,6 +60,7 @@ export const window = {
 export const workspace = {
   getConfiguration: vi.fn(() => ({
     get: vi.fn((key: string, defaultValue?: any) => defaultValue),
+    inspect: vi.fn(() => undefined),
     update: vi.fn(),
   })),
   openTextDocument: vi.fn(async (uri: any) => new TextDocument(uri, "")),
@@ -104,6 +105,10 @@ export enum DiagnosticSeverity {
 export const CodeActionKind = {
   QuickFix: "quickfix",
 };
+
+export class ThemeColor {
+  constructor(public readonly id: string) {}
+}
 
 export const env = {
   shell: "/bin/bash",
@@ -151,7 +156,9 @@ export class EventEmitter<T = any> {
   };
 
   fire = (data: T) => {
-    this.listeners.forEach((listener) => listener(data));
+    this.listeners.forEach((listener) => {
+      listener(data);
+    });
   };
 
   dispose = () => {
@@ -322,6 +329,8 @@ export default {
   commands,
   StatusBarAlignment,
   DiagnosticSeverity,
+  CodeActionKind,
+  ThemeColor,
   env,
   Uri,
   Range,
