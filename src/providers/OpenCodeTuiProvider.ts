@@ -14,6 +14,7 @@ import {
   TmuxSessionManager,
   TmuxUnavailableError,
 } from "../services/TmuxSessionManager";
+import { TreeSnapshot } from "../webview/sidebar/types";
 import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_SIZE } from "../types";
 
 interface StartupWorkspaceResolution {
@@ -86,6 +87,7 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
     this.activeInstanceId = instanceId;
 
     this._view?.webview.postMessage({ type: "clearTerminal" });
+    void this.emitTreeSnapshot();
 
     const existingTerminal =
       this.terminalManager.getByInstance(instanceId) ||
@@ -146,6 +148,8 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage((message) => {
       this.handleMessage(message);
     });
+
+    void this.emitTreeSnapshot();
 
     if (processAlive) {
       this.reconnectListeners();
@@ -340,6 +344,51 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
       }
     } finally {
       this.isStarting = false;
+      void this.emitTreeSnapshot();
+    }
+  }
+
+  private resolveSnapshotActiveSessionId(): string | null {
+    return this.activeInstanceId || null;
+  }
+
+  private hasWorkspaceContext(): boolean {
+    if (this.resolveWorkspacePathFromActiveInstance()) {
+      return true;
+    }
+
+    return Boolean(vscode.workspace.workspaceFolders?.length);
+  }
+
+  private withWorkspaceEmptyState(snapshot: TreeSnapshot): TreeSnapshot {
+    if (
+      !this.hasWorkspaceContext() &&
+      snapshot.sessions.length === 0 &&
+      snapshot.emptyState !== "no-tmux"
+    ) {
+      return {
+        ...snapshot,
+        emptyState: "no-workspace",
+      };
+    }
+
+    return snapshot;
+  }
+
+  private async emitTreeSnapshot(): Promise<void> {
+    if (!this._view || !this.tmuxSessionManager) {
+      return;
+    }
+
+    try {
+      const snapshot = await this.tmuxSessionManager.createTreeSnapshot(
+        this.resolveSnapshotActiveSessionId(),
+      );
+      this._view.webview.postMessage(this.withWorkspaceEmptyState(snapshot));
+    } catch (error) {
+      this.logger.warn(
+        `[OpenCodeTuiProvider] Failed to emit tree snapshot: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 

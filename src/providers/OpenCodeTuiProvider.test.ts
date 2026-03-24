@@ -119,6 +119,78 @@ describe("OpenCodeTuiProvider", () => {
     expect(switchSpy).toHaveBeenCalledWith("workspace-b");
   });
 
+  it("emits a populated treeSnapshot to the webview", async () => {
+    mockConfiguration({ autoStartOnOpen: false, enableHttpApi: false });
+    const snapshot: TreeSnapshot = {
+      type: "treeSnapshot",
+      sessions: [
+        {
+          id: "workspace-a",
+          name: "workspace-a",
+          workspace: "repo-a",
+          isActive: true,
+        },
+      ],
+      activeSessionId: "workspace-a",
+    };
+    const createTreeSnapshot = vi.fn().mockResolvedValue(snapshot);
+    const tmuxSessionManager = {
+      createTreeSnapshot,
+    } as unknown as TmuxSessionManager;
+
+    provider = createProvider({ tmuxSessionManager });
+    const { view } = resolveProvider(provider);
+    await flushAsyncStartup();
+
+    expect(createTreeSnapshot).toHaveBeenCalledWith("opencode-main");
+    expect(view.webview.postMessage).toHaveBeenCalledWith(snapshot);
+  });
+
+  it("emits explicit empty state snapshots from tmux manager", async () => {
+    mockConfiguration({ autoStartOnOpen: false, enableHttpApi: false });
+    const snapshot: TreeSnapshot = {
+      type: "treeSnapshot",
+      sessions: [],
+      activeSessionId: null,
+      emptyState: "no-tmux",
+    };
+    const createTreeSnapshot = vi.fn().mockResolvedValue(snapshot);
+    const tmuxSessionManager = {
+      createTreeSnapshot,
+    } as unknown as TmuxSessionManager;
+
+    provider = createProvider({ tmuxSessionManager });
+    const { view } = resolveProvider(provider);
+    await flushAsyncStartup();
+
+    expect(view.webview.postMessage).toHaveBeenCalledWith(snapshot);
+  });
+
+  it("emits a no-workspace empty state when no workspace context exists", async () => {
+    mockConfiguration({ autoStartOnOpen: false, enableHttpApi: false });
+    vscode.workspace.workspaceFolders = undefined;
+    const createTreeSnapshot = vi.fn().mockResolvedValue({
+      type: "treeSnapshot",
+      sessions: [],
+      activeSessionId: null,
+      emptyState: "no-sessions",
+    } satisfies TreeSnapshot);
+    const tmuxSessionManager = {
+      createTreeSnapshot,
+    } as unknown as TmuxSessionManager;
+
+    provider = createProvider({ tmuxSessionManager });
+    const { view } = resolveProvider(provider);
+    await flushAsyncStartup();
+
+    expect(view.webview.postMessage).toHaveBeenCalledWith({
+      type: "treeSnapshot",
+      sessions: [],
+      activeSessionId: null,
+      emptyState: "no-workspace",
+    });
+  });
+
   it("starts the default terminal path without sidebar tree interaction", async () => {
     mockConfiguration({ autoStartOnOpen: false, enableHttpApi: false });
     provider = createProvider();
