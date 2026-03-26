@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { ExtensionLifecycle } from "./ExtensionLifecycle";
 import { OutputChannelService } from "../services/OutputChannelService";
 import { InstanceStore } from "../services/InstanceStore";
+import { TmuxSessionManager } from "../services/TmuxSessionManager";
 import type * as vscodeTypes from "../test/mocks/vscode";
 
 const vscode = await vi.importActual<typeof vscodeTypes>(
@@ -25,6 +26,9 @@ describe("ExtensionLifecycle", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     OutputChannelService.resetInstance();
+    vi.spyOn(TmuxSessionManager.prototype, "isAvailable").mockResolvedValue(
+      true,
+    );
     lifecycle = new ExtensionLifecycle();
     mockContext = new vscode.ExtensionContext();
   });
@@ -46,6 +50,30 @@ describe("ExtensionLifecycle", () => {
           webviewOptions: { retainContextWhenHidden: true },
         }),
       );
+
+      expect(vscode.window.registerWebviewViewProvider).toHaveBeenCalledWith(
+        "opencodeTui.tmuxSessions",
+        expect.any(Object),
+      );
+    });
+
+    it("should skip tmux dashboard registration when tmux is unavailable", async () => {
+      vi.spyOn(TmuxSessionManager.prototype, "isAvailable").mockResolvedValue(
+        false,
+      );
+
+      await lifecycle.activate(mockContext);
+
+      expect(vscode.window.registerWebviewViewProvider).toHaveBeenCalledWith(
+        "opencodeTui",
+        expect.any(Object),
+        expect.objectContaining({
+          webviewOptions: { retainContextWhenHidden: true },
+        }),
+      );
+      expect(
+        vscode.window.registerWebviewViewProvider,
+      ).not.toHaveBeenCalledWith("opencodeTui.tmuxSessions", expect.anything());
     });
 
     it("should register commands", async () => {
@@ -57,25 +85,13 @@ describe("ExtensionLifecycle", () => {
       );
     });
 
-    it("should initialize wave services in order and show status bar", async () => {
+    it("should initialize core services without creating a status bar item", async () => {
       await lifecycle.activate(mockContext);
 
       expect(vscode.window.createOutputChannel).toHaveBeenCalledWith(
         "OpenCode Sidebar TUI",
         { log: true },
       );
-      expect(vscode.window.createStatusBarItem).toHaveBeenCalledTimes(1);
-
-      const outputChannelCall = vi.mocked(vscode.window.createOutputChannel)
-        .mock.invocationCallOrder[0];
-      const statusBarCall = vi.mocked(vscode.window.createStatusBarItem).mock
-        .invocationCallOrder[0];
-
-      expect(outputChannelCall).toBeLessThan(statusBarCall);
-
-      const statusBar = vi.mocked(vscode.window.createStatusBarItem).mock
-        .results[0].value;
-      expect(statusBar.show).toHaveBeenCalledTimes(1);
     });
 
     it("should initialize ContextManager with OutputChannelService", async () => {
@@ -127,12 +143,9 @@ describe("ExtensionLifecycle", () => {
       await lifecycle.activate(mockContext);
       await lifecycle.deactivate();
 
-      const statusBar = vi.mocked(vscode.window.createStatusBarItem).mock
-        .results[0].value;
       const outputChannel = vi.mocked(vscode.window.createOutputChannel).mock
         .results[0].value;
 
-      expect(statusBar.dispose).toHaveBeenCalled();
       expect(outputChannel.dispose).toHaveBeenCalled();
     });
   });

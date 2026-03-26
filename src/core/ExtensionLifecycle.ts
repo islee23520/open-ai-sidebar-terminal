@@ -4,7 +4,6 @@ import { OpenCodeCodeActionProvider } from "../providers/CodeActionProvider";
 import { TerminalManager } from "../terminals/TerminalManager";
 import { OutputCaptureManager } from "../services/OutputCaptureManager";
 import { ContextSharingService } from "../services/ContextSharingService";
-import { StatusBarManager } from "../services/StatusBarManager";
 import { ContextManager } from "../services/ContextManager";
 import { OutputChannelService } from "../services/OutputChannelService";
 import { InstanceDiscoveryService } from "../services/InstanceDiscoveryService";
@@ -16,6 +15,7 @@ import { InstanceController } from "../services/InstanceController";
 import { PortManager } from "../services/PortManager";
 import { ConnectionResolver } from "../services/ConnectionResolver";
 import { TmuxSessionManager } from "../services/TmuxSessionManager";
+import { TmuxSessionsDashboardProvider } from "../providers/TmuxSessionsDashboardProvider";
 
 // Module-level state for batching file sends from context menu
 let fileSendAccumulator: vscode.Uri[] = [];
@@ -29,7 +29,6 @@ export class ExtensionLifecycle {
   private tuiProvider: OpenCodeTuiProvider | undefined;
   private captureManager: OutputCaptureManager | undefined;
   private contextSharingService: ContextSharingService | undefined;
-  private statusBarManager: StatusBarManager | undefined;
   private outputChannelService: OutputChannelService | undefined;
   private contextManager: ContextManager | undefined;
   private instanceDiscoveryService: InstanceDiscoveryService | undefined;
@@ -40,6 +39,9 @@ export class ExtensionLifecycle {
   private instanceController: InstanceController | undefined;
   private portManager: PortManager | undefined;
   private tmuxSessionManager: TmuxSessionManager | undefined;
+  private tmuxSessionsDashboardProvider:
+    | TmuxSessionsDashboardProvider
+    | undefined;
 
   private static readonly TERMINAL_ID = "opencode-main";
 
@@ -77,14 +79,17 @@ export class ExtensionLifecycle {
       // Initialize multi-instance support
       this.instanceStore = new InstanceStore();
       this.portManager = new PortManager(this.instanceStore);
-      this.tmuxSessionManager = new TmuxSessionManager();
+      const tmuxSessionManager = new TmuxSessionManager();
+      if (await tmuxSessionManager.isAvailable()) {
+        this.tmuxSessionManager = tmuxSessionManager;
+      } else {
+        logger.info(
+          "[ExtensionLifecycle] tmux not detected; using native terminal shell behavior",
+        );
+      }
       this.instanceRegistry = new InstanceRegistry(context);
       this.instanceRegistry.hydrate(this.instanceStore);
 
-      // Initialize status bar with instance store for live updates
-      this.statusBarManager = new StatusBarManager(this.instanceStore);
-      this.statusBarManager.show();
-      context.subscriptions.push(this.statusBarManager);
       context.subscriptions.push(this.contextManager);
       context.subscriptions.push(this.instanceDiscoveryService);
 
@@ -133,6 +138,19 @@ export class ExtensionLifecycle {
         },
       );
       context.subscriptions.push(provider);
+
+      if (this.tmuxSessionManager) {
+        this.tmuxSessionsDashboardProvider = new TmuxSessionsDashboardProvider(
+          context,
+          this.tmuxSessionManager,
+          logger.getChannel(),
+        );
+        const tmuxDashboardProvider = vscode.window.registerWebviewViewProvider(
+          TmuxSessionsDashboardProvider.viewType,
+          this.tmuxSessionsDashboardProvider,
+        );
+        context.subscriptions.push(tmuxDashboardProvider);
+      }
 
       // Register commands
       this.registerCommands(context);
@@ -195,8 +213,6 @@ export class ExtensionLifecycle {
               this.tuiProvider?.focus();
             }, 100);
           }
-
-          vscode.window.setStatusBarMessage("$(check) Sent to OpenCode", 3000);
         }
       },
     );
@@ -223,8 +239,6 @@ export class ExtensionLifecycle {
               this.tuiProvider?.focus();
             }, 100);
           }
-
-          vscode.window.setStatusBarMessage(`$(check) Sent ${fileRef}`, 3000);
         } else {
           this.sendTerminalCwd();
         }
@@ -270,11 +284,6 @@ export class ExtensionLifecycle {
               this.tuiProvider?.focus();
             }, 100);
           }
-
-          vscode.window.setStatusBarMessage(
-            "$(check) Sent all open files",
-            3000,
-          );
         }
       },
     );
@@ -331,12 +340,6 @@ export class ExtensionLifecycle {
               this.tuiProvider?.focus();
             }, 100);
           }
-
-          const message =
-            uniqueUris.length > 1
-              ? `Sent ${uniqueUris.length} files`
-              : `Sent ${fileRefs[0]}`;
-          vscode.window.setStatusBarMessage(`$(check) ${message}`, 3000);
 
           fileSendAccumulator = [];
         }, 100);
@@ -510,6 +513,18 @@ export class ExtensionLifecycle {
       },
     );
 
+    const switchTmuxSessionCommand = vscode.commands.registerCommand(
+      "opencodeTui.switchTmuxSession",
+      async (sessionId?: string) => {
+        if (!sessionId || !this.tuiProvider) {
+          return;
+        }
+
+        await this.tuiProvider.switchToTmuxSession(sessionId);
+        await vscode.commands.executeCommand("opencodeTui.focus");
+      },
+    );
+
     context.subscriptions.push(
       startCommand,
       sendToTerminalCommand,
@@ -521,6 +536,7 @@ export class ExtensionLifecycle {
       openInNewWindowCommand,
       spawnForWorkspaceCommand,
       selectInstanceCommand,
+      switchTmuxSessionCommand,
     );
   }
 
@@ -630,8 +646,6 @@ export class ExtensionLifecycle {
         this.tuiProvider?.focus();
       }, 100);
     }
-
-    vscode.window.setStatusBarMessage(`$(check) Sent ${reference}`, 3000);
   }
 
   async deactivate(): Promise<void> {
@@ -645,11 +659,6 @@ export class ExtensionLifecycle {
     if (this.terminalManager) {
       this.terminalManager.dispose();
       this.terminalManager = undefined;
-    }
-
-    if (this.statusBarManager) {
-      this.statusBarManager.dispose();
-      this.statusBarManager = undefined;
     }
 
     const logger = this.outputChannelService;
@@ -677,6 +686,11 @@ export class ExtensionLifecycle {
 
     if (this.instanceStore) {
       this.instanceStore = undefined;
+    }
+
+    if (this.tmuxSessionsDashboardProvider) {
+      this.tmuxSessionsDashboardProvider.dispose();
+      this.tmuxSessionsDashboardProvider = undefined;
     }
 
     this.codeActionProvider = undefined;

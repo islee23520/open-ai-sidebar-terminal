@@ -46,6 +46,13 @@
           "type": "webview",
           "icon": "$(terminal)",
           "contextualTitle": "OpenCode TUI"
+        },
+        {
+          "id": "opencodeTui.tmuxSessions",
+          "name": "Tmux Sessions",
+          "type": "webview",
+          "icon": "$(server)",
+          "contextualTitle": "Tmux Sessions"
         }
       ]
     },
@@ -260,11 +267,6 @@
           ],
           "default": "info",
           "description": "Log output level for OpenCode TUI"
-        },
-        "opencodeTui.showStatusBar": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show status bar item for quick access"
         },
         "opencodeTui.contextDebounceMs": {
           "type": "number",
