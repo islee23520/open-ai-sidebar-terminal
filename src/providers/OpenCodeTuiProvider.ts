@@ -40,6 +40,7 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
   private lastKnownCols: number = 0;
   private lastKnownRows: number = 0;
   private isStarting = false;
+  private selectedTmuxSessionId?: string;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -77,8 +78,12 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
   /**
    * Switches the provider to the given instance and rebinds terminal streams.
    */
-  public async switchToInstance(instanceId: InstanceId): Promise<void> {
-    if (instanceId === this.activeInstanceId) {
+  public async switchToInstance(
+    instanceId: InstanceId,
+    options?: { forceRestart?: boolean },
+  ): Promise<void> {
+    const forceRestart = options?.forceRestart ?? false;
+    if (instanceId === this.activeInstanceId && !forceRestart) {
       return;
     }
 
@@ -93,7 +98,7 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
       this.terminalManager.getByInstance(instanceId) ||
       this.terminalManager.getTerminal(instanceId);
 
-    if (existingTerminal) {
+    if (existingTerminal && !forceRestart) {
       this.isStarted = true;
       this.reconnectListeners();
 
@@ -118,6 +123,11 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
         );
       }
       return;
+    }
+
+    if (existingTerminal && forceRestart) {
+      this.terminalManager.killByInstance(instanceId);
+      this.terminalManager.killTerminal(instanceId);
     }
 
     await this.startOpenCode();
@@ -241,21 +251,22 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
       const enableHttpApi = config.get<boolean>("enableHttpApi", true);
       const httpTimeout = config.get<number>("httpTimeout", 5000);
       const command = config.get<string>("command", "opencode -c");
-      let tmuxSessionId = this.resolveTmuxSessionIdForInstance(
-        this.activeInstanceId,
-      );
+      const selectedTmuxSessionId = this.selectedTmuxSessionId;
+      let tmuxSessionId =
+        selectedTmuxSessionId ??
+        this.resolveTmuxSessionIdForInstance(this.activeInstanceId);
 
       let port: number | undefined;
       const { workspacePath, isWorkspaceScoped } =
         this.resolveStartupWorkspacePath();
 
-      if (isWorkspaceScoped) {
+      if (!selectedTmuxSessionId && isWorkspaceScoped) {
         const ensuredSessionId =
           await this.ensureWorkspaceSession(workspacePath);
         if (ensuredSessionId) {
           tmuxSessionId = ensuredSessionId;
         }
-      } else if (!tmuxSessionId) {
+      } else if (!selectedTmuxSessionId && !tmuxSessionId) {
         tmuxSessionId = await this.resolveFallbackTmuxSessionId();
       }
 
@@ -263,6 +274,7 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
         command,
         tmuxSessionId,
       );
+      this.selectedTmuxSessionId = undefined;
 
       if (enableHttpApi) {
         try {
@@ -633,7 +645,13 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
   }
 
   public async switchToTmuxSession(sessionId: string): Promise<void> {
-    await this.switchToInstance(this.resolveInstanceIdFromSessionId(sessionId));
+    this.selectedTmuxSessionId = sessionId;
+    await this.switchToInstance(
+      this.resolveInstanceIdFromSessionId(sessionId),
+      {
+        forceRestart: true,
+      },
+    );
   }
 
   /**

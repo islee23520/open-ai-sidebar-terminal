@@ -488,6 +488,46 @@ describe("OpenCodeTuiProvider", () => {
     );
   });
 
+  it("forces attach to the selected tmux session when switching tabs", async () => {
+    mockConfiguration({ autoStartOnOpen: false, enableHttpApi: false });
+    const instanceStore = new InstanceStore();
+    instanceStore.upsert({
+      config: {
+        id: "workspace-z-instance",
+        workspaceUri: "file:///workspaces/repo-z",
+      },
+      runtime: { terminalKey: "workspace-z-instance", tmuxSessionId: "old-z" },
+      state: "connected",
+    });
+
+    const ensureSession = vi.fn().mockResolvedValue({
+      action: "attached",
+      session: {
+        id: "repo-z",
+        name: "repo-z",
+        workspace: "repo-z",
+        isActive: true,
+      },
+    });
+    const tmuxSessionManager = {
+      ensureSession,
+    } as unknown as TmuxSessionManager;
+
+    provider = createProvider({ instanceStore, tmuxSessionManager });
+    const createTerminalSpy = vi.spyOn(terminalManager, "createTerminal");
+    resolveProvider(provider);
+
+    await provider.switchToTmuxSession("target-z");
+    await flushAsyncStartup();
+
+    expect(ensureSession).not.toHaveBeenCalled();
+    const lastCall =
+      createTerminalSpy.mock.calls[createTerminalSpy.mock.calls.length - 1];
+    expect(lastCall).toBeDefined();
+    expect(lastCall?.[1]).toBe("tmux attach-session -t target-z");
+    expect(lastCall?.[6]).toBe("target-z");
+  });
+
   it("ignores treeSnapshot payloads in the provider message handler", () => {
     mockConfiguration();
     provider = createProvider();
