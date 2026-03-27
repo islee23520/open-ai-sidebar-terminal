@@ -1410,30 +1410,12 @@ export class OpenCodeTuiProvider implements vscode.WebviewViewProvider {
       font-size: 12px;
       line-height: 1.2;
       white-space: nowrap;
-      cursor: pointer;
-    }
-    .session-tab-item:hover {
-      background-color: #2a2d2e;
+      cursor: default;
     }
     .session-tab-item.active {
       background-color: #04395e;
       border-color: #0e639c;
       color: #fff;
-    }
-    .session-tab-kill {
-      border: 1px solid #3a3a3a;
-      border-radius: 6px;
-      background: #2d2d2d;
-      color: #b8b8b8;
-      padding: 2px 6px;
-      font-size: 12px;
-      line-height: 1;
-      cursor: pointer;
-    }
-    .session-tab-kill:hover {
-      background: #5a1d1d;
-      color: #fff;
-      border-color: #8b2d2d;
     }
     .session-tab-empty-state {
       padding: 8px 12px;

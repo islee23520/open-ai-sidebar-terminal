@@ -198,6 +198,36 @@ describe("ExtensionLifecycle", () => {
       expect(fileCall).toBeDefined();
     });
 
+    it("should register and execute tmux management commands", async () => {
+      const createTmuxSession = vi.fn().mockResolvedValue(undefined);
+      const switchToNativeShell = vi.fn().mockResolvedValue(undefined);
+
+      Reflect.set(lifecycle, "tuiProvider", {
+        createTmuxSession,
+        switchToNativeShell,
+      });
+
+      const calls = vi.mocked(vscode.commands.registerCommand).mock.calls;
+      const createCall = calls.find(
+        (call) => call[0] === "opencodeTui.createTmuxSession",
+      );
+      const nativeCall = calls.find(
+        (call) => call[0] === "opencodeTui.switchNativeShell",
+      );
+
+      expect(createCall).toBeDefined();
+      expect(nativeCall).toBeDefined();
+
+      const createHandler = createCall?.[1] as () => Promise<void>;
+      const nativeHandler = nativeCall?.[1] as () => Promise<void>;
+
+      await createHandler();
+      await nativeHandler();
+
+      expect(createTmuxSession).toHaveBeenCalledTimes(1);
+      expect(switchToNativeShell).toHaveBeenCalledTimes(1);
+    });
+
     describe("opencode.spawnForWorkspace", () => {
       const getSpawnForWorkspaceHandler = () => {
         (lifecycle as any).registerCommands(mockContext);

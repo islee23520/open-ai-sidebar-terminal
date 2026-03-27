@@ -21,7 +21,30 @@ export type WebviewMessage =
   | { type: "getClipboard" }
   | { type: "setClipboard"; text: string }
   | { type: "triggerPaste" }
-  | { type: "imagePasted"; data: string };
+  | { type: "imagePasted"; data: string }
+  | { type: "switchSession"; sessionId: string }
+  | { type: "killSession"; sessionId: string }
+  | { type: "createTmuxSession" }
+  | { type: "switchNativeShell" };
+
+export type TmuxDashboardActionMessage =
+  | { action: "refresh" }
+  | { action: "create" }
+  | { action: "switchNativeShell" }
+  | { action: "activate"; sessionId: string };
+
+export type TmuxDashboardSessionDto = {
+  id: string;
+  name: string;
+  workspace: string;
+  isActive: boolean;
+};
+
+export type TmuxDashboardHostMessage = {
+  type: "updateTmuxSessions";
+  sessions: TmuxDashboardSessionDto[];
+  workspace: string;
+};
 
 export const ALLOWED_IMAGE_TYPES = [
   "image/png",

@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import type { WebviewMessage, HostMessage } from "./types";
+import type {
+  HostMessage,
+  TmuxDashboardActionMessage,
+  TmuxDashboardHostMessage,
+  WebviewMessage,
+} from "./types";
 
 describe("Types", () => {
   describe("WebviewMessage", () => {
@@ -83,6 +88,69 @@ describe("Types", () => {
       expect(message.type).toBe("filesDropped");
       expect(message.files).toEqual(["/file1.ts", "/file2.ts"]);
       expect(message.shiftKey).toBe(true);
+    });
+
+    it("should accept tmux session control messages", () => {
+      const switchMessage: WebviewMessage = {
+        type: "switchSession",
+        sessionId: "workspace-a",
+      };
+      const killMessage: WebviewMessage = {
+        type: "killSession",
+        sessionId: "workspace-a",
+      };
+      const createMessage: WebviewMessage = {
+        type: "createTmuxSession",
+      };
+      const nativeMessage: WebviewMessage = {
+        type: "switchNativeShell",
+      };
+
+      expect(switchMessage.type).toBe("switchSession");
+      expect(switchMessage.sessionId).toBe("workspace-a");
+      expect(killMessage.type).toBe("killSession");
+      expect(killMessage.sessionId).toBe("workspace-a");
+      expect(createMessage.type).toBe("createTmuxSession");
+      expect(nativeMessage.type).toBe("switchNativeShell");
+    });
+  });
+
+  describe("Tmux dashboard messages", () => {
+    it("should accept tmux dashboard action messages", () => {
+      const createMessage: TmuxDashboardActionMessage = {
+        action: "create",
+      };
+      const switchNativeMessage: TmuxDashboardActionMessage = {
+        action: "switchNativeShell",
+      };
+      const activateMessage: TmuxDashboardActionMessage = {
+        action: "activate",
+        sessionId: "workspace-a-2",
+      };
+
+      expect(createMessage.action).toBe("create");
+      expect(switchNativeMessage.action).toBe("switchNativeShell");
+      expect(activateMessage.action).toBe("activate");
+      expect(activateMessage.sessionId).toBe("workspace-a-2");
+    });
+
+    it("should accept tmux dashboard host messages", () => {
+      const message: TmuxDashboardHostMessage = {
+        type: "updateTmuxSessions",
+        workspace: "repo-a",
+        sessions: [
+          {
+            id: "repo-a-2",
+            name: "repo-a-2",
+            workspace: "repo-a",
+            isActive: true,
+          },
+        ],
+      };
+
+      expect(message.type).toBe("updateTmuxSessions");
+      expect(message.workspace).toBe("repo-a");
+      expect(message.sessions[0]?.isActive).toBe(true);
     });
   });
 

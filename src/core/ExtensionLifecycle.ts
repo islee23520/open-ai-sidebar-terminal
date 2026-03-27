@@ -525,6 +525,28 @@ export class ExtensionLifecycle {
       },
     );
 
+    const createTmuxSessionCommand = vscode.commands.registerCommand(
+      "opencodeTui.createTmuxSession",
+      async () => {
+        if (!this.tuiProvider) {
+          return;
+        }
+
+        await this.tuiProvider.createTmuxSession();
+      },
+    );
+
+    const switchNativeShellCommand = vscode.commands.registerCommand(
+      "opencodeTui.switchNativeShell",
+      async () => {
+        if (!this.tuiProvider) {
+          return;
+        }
+
+        await this.tuiProvider.switchToNativeShell();
+      },
+    );
+
     context.subscriptions.push(
       startCommand,
       sendToTerminalCommand,
@@ -537,6 +559,8 @@ export class ExtensionLifecycle {
       spawnForWorkspaceCommand,
       selectInstanceCommand,
       switchTmuxSessionCommand,
+      createTmuxSessionCommand,
+      switchNativeShellCommand,
     );
   }
 

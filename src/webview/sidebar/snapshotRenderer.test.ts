@@ -8,28 +8,13 @@ describe("SessionTreeRenderer", () => {
   let container: HTMLElement;
   let tree: SessionTree;
   let renderer: SessionTreeRenderer;
-  let onSessionClick: any;
-  let onKillSession: any;
-  let onCreateSession: any;
-  let onSwitchNativeShell: any;
   let onGroupToggle: any;
 
   beforeEach(() => {
     container = document.createElement("div");
-    onSessionClick = vi.fn();
-    onKillSession = vi.fn();
-    onCreateSession = vi.fn();
-    onSwitchNativeShell = vi.fn();
     onGroupToggle = vi.fn();
     tree = new SessionTree();
-    renderer = new SessionTreeRenderer(
-      container,
-      onSessionClick,
-      onKillSession,
-      onCreateSession,
-      onSwitchNativeShell,
-      onGroupToggle,
-    );
+    renderer = new SessionTreeRenderer(container, onGroupToggle);
 
     tree.subscribe((state) => {
       renderer.render(state);
@@ -88,9 +73,10 @@ describe("SessionTreeRenderer", () => {
     const activeItem = container.querySelector(".session-tab-item.active");
     expect(activeItem).not.toBeNull();
     expect(activeItem?.textContent).toBe("tmux");
+    expect(container.querySelectorAll(".session-tab-action")).toHaveLength(0);
   });
 
-  it("handles session click", () => {
+  it("renders sessions as display-only indicators in the terminal strip", () => {
     const snapshot: TreeSnapshot = {
       type: "treeSnapshot",
       sessions: [
@@ -101,13 +87,15 @@ describe("SessionTreeRenderer", () => {
 
     tree.updateFromSnapshot(snapshot);
 
-    const item = container.querySelector(".session-tab-item") as HTMLElement;
-    item.click();
-
-    expect(onSessionClick).toHaveBeenCalledWith("1");
+    expect(container.querySelectorAll("button.session-tab-item")).toHaveLength(
+      0,
+    );
+    expect(container.querySelector(".session-tab-item")?.textContent).toBe(
+      "tmux",
+    );
   });
 
-  it("handles kill, create, and native action clicks", () => {
+  it("does not render top-area tmux management controls", () => {
     const snapshot: TreeSnapshot = {
       type: "treeSnapshot",
       sessions: [
@@ -118,27 +106,7 @@ describe("SessionTreeRenderer", () => {
 
     tree.updateFromSnapshot(snapshot);
 
-    const killButton = container.querySelector(
-      ".session-tab-kill",
-    ) as HTMLElement;
-    killButton.click();
-
-    const createButton = Array.from(
-      container.querySelectorAll(".session-tab-action"),
-    ).find(
-      (button) => (button as HTMLElement).textContent === "+ tmux",
-    ) as HTMLElement;
-    createButton.click();
-
-    const nativeButton = Array.from(
-      container.querySelectorAll(".session-tab-action"),
-    ).find(
-      (button) => (button as HTMLElement).textContent === "native",
-    ) as HTMLElement;
-    nativeButton.click();
-
-    expect(onKillSession).toHaveBeenCalledWith("1");
-    expect(onCreateSession).toHaveBeenCalledTimes(1);
-    expect(onSwitchNativeShell).toHaveBeenCalledTimes(1);
+    expect(container.querySelector(".session-tab-action")).toBeNull();
+    expect(container.querySelector(".session-tab-kill")).toBeNull();
   });
 });
