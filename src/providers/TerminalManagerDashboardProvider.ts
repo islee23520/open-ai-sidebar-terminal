@@ -571,9 +571,9 @@ export class TerminalManagerDashboardProvider
       <div class="workspace" id="workspace">Workspace: -</div>
     </div>
     <div class="header-actions">
-      <button id="create" class="primary" data-action="create">New tmux</button>
-      <button id="native-shell" data-action="switchNativeShell">Native shell</button>
-      <button id="refresh" data-action="refresh">Refresh</button>
+      <button id="create" class="primary" data-action="create" title="Create new tmux session">New tmux</button>
+      <button id="native-shell" data-action="switchNativeShell" title="Switch to native terminal">Native shell</button>
+      <button id="refresh" data-action="refresh" title="Refresh session list">Refresh</button>
     </div>
   </div>
   <div class="return-banner" id="return-banner" style="display:none;">
@@ -669,8 +669,8 @@ export class TerminalManagerDashboardProvider
             '<strong>' + escapeHtml(s.name) + '</strong>',
             '<div class="status">' + statusText + '</div>',
             '</div>',
-            '<button class="primary" data-session-id="' + escapeHtml(s.id) + '"' + disabled + '>' + buttonLabel + '</button>',
-            '<button class="danger" data-action="killSession" data-session-id="' + escapeHtml(s.id) + '" title="Kill Session">✕</button>',
+            '<button class="primary" data-session-id="' + escapeHtml(s.id) + '" title="' + (s.isActive ? 'Currently active session' : 'Switch to this session') + '"' + disabled + '>' + buttonLabel + '</button>',
+            '<button class="danger" data-action="killSession" data-session-id="' + escapeHtml(s.id) + '" title="Kill Session"' + (s.isActive ? ' disabled' : '') + '>✕</button>',
             '</div>',
             '<div class="meta-grid">',
             '<div class="meta">tmux session: ' + escapeHtml(s.id) + '</div>',
@@ -886,6 +886,17 @@ export class TerminalManagerDashboardProvider
         return;
       }
 
+      if (target.closest('[data-action="killSession"]')) {
+        const button = target.closest('[data-action="killSession"]');
+        if (button instanceof HTMLButtonElement && !button.disabled) {
+          const sessionId = button.dataset.sessionId;
+          if (sessionId && window.confirm("Kill tmux session " + sessionId + "?")) {
+            vscode.postMessage({ action: "killSession", sessionId });
+          }
+        }
+        return;
+      }
+
       if (!(target instanceof HTMLButtonElement)) {
         return;
       }
@@ -893,14 +904,6 @@ export class TerminalManagerDashboardProvider
       const action = target.dataset.action;
       if (action === "refresh" || action === "create" || action === "switchNativeShell") {
         vscode.postMessage({ action });
-        return;
-      }
-
-      if (action === "killSession") {
-        const sessionId = target.dataset.sessionId;
-        if (sessionId && window.confirm("Kill tmux session " + sessionId + "?")) {
-          vscode.postMessage({ action: "killSession", sessionId });
-        }
         return;
       }
 
