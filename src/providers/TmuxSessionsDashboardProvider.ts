@@ -8,11 +8,6 @@ import {
   TmuxDashboardSessionDto,
 } from "../types";
 
-interface PaneCapableTmuxSessionManager {
-  listPanes(sessionId: string): Promise<TmuxDashboardPaneDto[]>;
-  sendTextToPane(paneId: string, text: string): Promise<void>;
-}
-
 /**
  * Terminal Managers dashboard provider. Webview-based tmux session manager with inline pane controls (split, switch, resize, swap, kill). Filters sessions to current workspace.
  */
@@ -676,23 +671,6 @@ export class TmuxSessionsDashboardProvider
   }
 
   /**
-   * Returns a pane-capable session manager if available.
-   * @returns Pane-capable session manager or undefined
-   */
-  private getPaneManager(): PaneCapableTmuxSessionManager | undefined {
-    const manager = this
-      .tmuxSessionManager as unknown as Partial<PaneCapableTmuxSessionManager>;
-    if (
-      typeof manager.listPanes === "function" &&
-      typeof manager.sendTextToPane === "function"
-    ) {
-      return manager as PaneCapableTmuxSessionManager;
-    }
-
-    return undefined;
-  }
-
-  /**
    * Lists panes for a specific tmux session.
    * @param sessionId The session ID to list panes for
    * @returns Array of pane DTOs
@@ -700,18 +678,7 @@ export class TmuxSessionsDashboardProvider
   private async listPanesForSession(
     sessionId: string,
   ): Promise<TmuxDashboardPaneDto[]> {
-    const manager = this.getPaneManager();
-    if (!manager) {
-      return [];
-    }
-
-    const panes = await manager.listPanes(sessionId);
-    return panes.map((p) => ({
-      paneId: p.paneId,
-      index: p.index,
-      title: p.title,
-      isActive: p.isActive,
-    }));
+    return this.tmuxSessionManager.listPaneDtos(sessionId);
   }
 
   /**
@@ -720,12 +687,7 @@ export class TmuxSessionsDashboardProvider
    * @param text The text to send
    */
   private async sendTextToPane(paneId: string, text: string): Promise<void> {
-    const manager = this.getPaneManager();
-    if (!manager) {
-      return;
-    }
-
-    await manager.sendTextToPane(paneId, text);
+    await this.tmuxSessionManager.sendTextToPane(paneId, text);
   }
 
   /**

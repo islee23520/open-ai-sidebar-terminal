@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { basename, resolve } from "node:path";
-import { TmuxSession, TreeSnapshot } from "../types";
+import { TmuxDashboardPaneDto, TmuxSession, TreeSnapshot } from "../types";
 
 const TMUX_LIST_FORMAT =
   "#{session_name}\t#{session_attached}\t#{session_path}";
@@ -25,6 +25,13 @@ type ExecFileLike = (
 interface DiscoveredSession {
   session: TmuxSession;
   workspacePath: string | undefined;
+}
+
+export interface TmuxPane {
+  paneId: string;
+  index: number;
+  title: string;
+  isActive: boolean;
 }
 
 export class TmuxUnavailableError extends Error {
@@ -294,6 +301,63 @@ export class TmuxSessionManager {
       }
       throw error;
     }
+  }
+
+  public async sendTextToPane(paneId: string, text: string): Promise<void> {
+    try {
+      await this.runTmux(["send-keys", "-t", paneId, text, "C-m"]);
+    } catch (error) {
+      if (this.isTmuxUnavailable(error)) {
+        throw new TmuxUnavailableError();
+      }
+      throw error;
+    }
+  }
+
+  public async listPanes(sessionId: string): Promise<TmuxPane[]> {
+    try {
+      const format = "#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_active}";
+      const stdout = await this.runTmux([
+        "list-panes",
+        "-t",
+        sessionId,
+        "-F",
+        format,
+      ]);
+      return stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => {
+          const [paneId, index, title, active] = line.split("\t");
+          return {
+            paneId: paneId ?? "",
+            index: Number(index),
+            title: title ?? "",
+            isActive: active === "1",
+          };
+        });
+    } catch (error) {
+      if (this.isNoSessionsError(error)) {
+        return [];
+      }
+      if (this.isTmuxUnavailable(error)) {
+        throw new TmuxUnavailableError();
+      }
+      throw error;
+    }
+  }
+
+  public async listPaneDtos(
+    sessionId: string,
+  ): Promise<TmuxDashboardPaneDto[]> {
+    const panes = await this.listPanes(sessionId);
+    return panes.map((p) => ({
+      paneId: p.paneId,
+      index: p.index,
+      title: p.title,
+      isActive: p.isActive,
+    }));
   }
 
   private parseSessions(stdout: string): DiscoveredSession[] {

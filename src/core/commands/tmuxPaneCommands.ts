@@ -1,13 +1,8 @@
-import { execFile } from "node:child_process";
 import * as vscode from "vscode";
-import type { TmuxSessionManager } from "../../services/TmuxSessionManager";
-
-type TmuxPane = {
-  paneId: string;
-  index: number;
-  title: string;
-  isActive: boolean;
-};
+import type {
+  TmuxPane,
+  TmuxSessionManager,
+} from "../../services/TmuxSessionManager";
 
 type PaneQuickPickItem = {
   label: string;
@@ -31,38 +26,19 @@ function toPaneQuickPickItems(
   }));
 }
 
-async function runTmux(args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile("tmux", args, (error, stdout, stderr) => {
-      if (error) {
-        reject(new Error(stderr || error.message));
-        return;
-      }
-      resolve(stdout.toString());
-    });
-  });
+async function listTmuxPanes(
+  tmuxManager: TmuxSessionManager,
+  sessionId: string,
+): Promise<TmuxPane[]> {
+  return tmuxManager.listPanes(sessionId);
 }
 
-async function listTmuxPanes(sessionId: string): Promise<TmuxPane[]> {
-  const format = "#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_active}";
-  const stdout = await runTmux(["list-panes", "-t", sessionId, "-F", format]);
-  return stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line) => {
-      const [paneId, index, title, active] = line.split("\t");
-      return {
-        paneId,
-        index: Number(index),
-        title: title ?? "",
-        isActive: active === "1",
-      };
-    });
-}
-
-async function sendTextToTmuxPane(paneId: string, text: string): Promise<void> {
-  await runTmux(["send-keys", "-t", paneId, text, "C-m"]);
+async function sendTextToTmuxPane(
+  tmuxManager: TmuxSessionManager,
+  paneId: string,
+  text: string,
+): Promise<void> {
+  await tmuxManager.sendTextToPane(paneId, text);
 }
 
 async function pickPaneFromActiveSession(
@@ -71,10 +47,10 @@ async function pickPaneFromActiveSession(
   includeActiveMarker: boolean = false,
 ): Promise<PaneQuickPickItem | undefined> {
   const sessionId = deps.resolveActiveTmuxSessionId();
-  if (!sessionId) {
+  if (!sessionId || !deps.tmuxManager) {
     return undefined;
   }
-  const panes = await listTmuxPanes(sessionId);
+  const panes = await listTmuxPanes(deps.tmuxManager, sessionId);
   return vscode.window.showQuickPick<PaneQuickPickItem>(
     toPaneQuickPickItems(panes, includeActiveMarker),
     { placeHolder },
@@ -218,7 +194,7 @@ export function registerTmuxPaneCommands(
           prompt: "Enter text to send to pane",
         });
         if (text) {
-          await sendTextToTmuxPane(item.paneId, text);
+          await sendTextToTmuxPane(deps.tmuxManager, item.paneId, text);
         }
         return;
       }
@@ -231,7 +207,7 @@ export function registerTmuxPaneCommands(
         prompt: "Enter text to send",
       });
       if (text) {
-        await sendTextToTmuxPane(selected.paneId, text);
+        await sendTextToTmuxPane(deps.tmuxManager, selected.paneId, text);
       }
     },
   );
@@ -289,7 +265,7 @@ export function registerTmuxPaneCommands(
       if (!sessionId) {
         return;
       }
-      const panes = await listTmuxPanes(sessionId);
+      const panes = await listTmuxPanes(deps.tmuxManager, sessionId);
       const sourcePaneId = item?.paneId;
       if (!sourcePaneId) {
         const selected = await vscode.window.showQuickPick<PaneQuickPickItem>(
@@ -346,7 +322,7 @@ export function registerTmuxPaneCommands(
       if (!sessionId) {
         return;
       }
-      const panes = await listTmuxPanes(sessionId);
+      const panes = await listTmuxPanes(deps.tmuxManager, sessionId);
       const paneId = item?.paneId;
       if (!paneId) {
         if (panes.length <= 1) {
