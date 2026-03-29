@@ -52,7 +52,7 @@ describe("ExtensionLifecycle", () => {
       );
 
       expect(vscode.window.registerWebviewViewProvider).toHaveBeenCalledWith(
-        "opencodeTui.tmuxSessions",
+        "opencodeTui.terminalManager",
         expect.any(Object),
       );
     });

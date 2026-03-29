@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { basename, resolve } from "node:path";
+import * as vscode from "vscode";
 import { TmuxDashboardPaneDto, TmuxSession, TreeSnapshot } from "../types";
 
 const TMUX_LIST_FORMAT =
@@ -47,6 +48,9 @@ export interface EnsureTmuxSessionResult {
 }
 
 export class TmuxSessionManager {
+  private readonly _onPaneChanged = new vscode.EventEmitter<void>();
+  public readonly onPaneChanged = this._onPaneChanged.event;
+
   constructor(
     private readonly runExecFile: ExecFileLike = (file, args, callback) => {
       execFile(file, args, callback as never);
@@ -237,6 +241,7 @@ export class TmuxSessionManager {
         args.push(options.command);
       }
       const stdout = await this.runTmux(args);
+      this._onPaneChanged.fire();
       return stdout.trim();
     } catch (error) {
       if (this.isTmuxUnavailable(error)) {
@@ -249,6 +254,7 @@ export class TmuxSessionManager {
   public async killPane(paneId: string): Promise<void> {
     try {
       await this.runTmux(["kill-pane", "-t", paneId]);
+      this._onPaneChanged.fire();
     } catch (error) {
       if (this.isTmuxUnavailable(error)) {
         throw new TmuxUnavailableError();
@@ -260,6 +266,7 @@ export class TmuxSessionManager {
   public async selectPane(paneId: string): Promise<void> {
     try {
       await this.runTmux(["select-pane", "-t", paneId]);
+      this._onPaneChanged.fire();
     } catch (error) {
       if (this.isTmuxUnavailable(error)) {
         throw new TmuxUnavailableError();

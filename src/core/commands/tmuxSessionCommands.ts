@@ -184,6 +184,16 @@ export function registerTmuxSessionCommands(
     },
   );
 
+  const openTerminalManagerCommand = vscode.commands.registerCommand(
+    "opencodeTui.openTerminalManager",
+    () => {
+      vscode.commands.executeCommand(
+        "workbench.view.focus",
+        "opencodeTui.terminalManager",
+      );
+    },
+  );
+
   return [
     openInNewWindowCommand,
     spawnForWorkspaceCommand,
@@ -191,5 +201,6 @@ export function registerTmuxSessionCommands(
     switchTmuxSessionCommand,
     createTmuxSessionCommand,
     switchNativeShellCommand,
+    openTerminalManagerCommand,
   ];
 }

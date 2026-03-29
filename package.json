@@ -48,7 +48,7 @@
           "contextualTitle": "OpenCode TUI"
         },
         {
-          "id": "opencodeTui.tmuxSessions",
+          "id": "opencodeTui.terminalManager",
           "name": "Terminal Managers",
           "type": "webview",
           "icon": "$(server)",
@@ -113,6 +113,28 @@
         "icon": "$(server-environment)"
       },
       {
+        "command": "opencodeTui.switchTmuxSession",
+        "title": "Switch Tmux Session",
+        "category": "OpenCode TUI"
+      },
+      {
+        "command": "opencodeTui.createTmuxSession",
+        "title": "Create Tmux Session",
+        "category": "OpenCode TUI",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "opencodeTui.switchNativeShell",
+        "title": "Switch to Native Shell",
+        "category": "OpenCode TUI"
+      },
+      {
+        "command": "opencodeTui.openTerminalManager",
+        "title": "Open Terminal Managers",
+        "category": "OpenCode TUI",
+        "icon": "$(server)"
+      },
+      {
         "command": "opencodeTui.tmuxSwitchPane",
         "title": "Switch to Pane",
         "category": "OpenCode TUI",
@@ -167,46 +189,6 @@
           "command": "opencodeTui.restart",
           "when": "view == opencodeTui",
           "group": "navigation@1"
-        },
-        {
-          "command": "opencodeTui.tmuxSwitchPane",
-          "when": "view == opencodeTui.tmuxSessions",
-          "group": "navigation@1"
-        },
-        {
-          "command": "opencodeTui.tmuxSplitPaneH",
-          "when": "view == opencodeTui.tmuxSessions",
-          "group": "navigation@2"
-        },
-        {
-          "command": "opencodeTui.tmuxSplitPaneV",
-          "when": "view == opencodeTui.tmuxSessions",
-          "group": "navigation@3"
-        },
-        {
-          "command": "opencodeTui.tmuxSplitPaneWithCommand",
-          "when": "view == opencodeTui.tmuxSessions",
-          "group": "navigation@4"
-        },
-        {
-          "command": "opencodeTui.tmuxSendTextToPane",
-          "when": "view == opencodeTui.tmuxSessions",
-          "group": "navigation@5"
-        },
-        {
-          "command": "opencodeTui.tmuxResizePane",
-          "when": "view == opencodeTui.tmuxSessions",
-          "group": "navigation@6"
-        },
-        {
-          "command": "opencodeTui.tmuxSwapPane",
-          "when": "view == opencodeTui.tmuxSessions",
-          "group": "navigation@7"
-        },
-        {
-          "command": "opencodeTui.tmuxKillPane",
-          "when": "view == opencodeTui.tmuxSessions",
-          "group": "navigation@8"
         }
       ],
       "explorer/context": [

@@ -27,6 +27,18 @@ export type WebviewMessage =
   | { type: "createTmuxSession" }
   | { type: "switchNativeShell" };
 
+export type AiTool = "opencode" | "claude" | "codex";
+
+export const AI_TOOLS: readonly {
+  id: AiTool;
+  label: string;
+  command: string;
+}[] = [
+  { id: "opencode", label: "OpenCode", command: "opencode" },
+  { id: "claude", label: "Claude", command: "claude" },
+  { id: "codex", label: "Codex", command: "codex" },
+] as const;
+
 export type TmuxDashboardActionMessage =
   | { action: "refresh" }
   | { action: "create" }
@@ -66,6 +78,12 @@ export type TmuxDashboardActionMessage =
       sessionId: string;
       sourcePaneId: string;
       targetPaneId: string;
+    }
+  | {
+      action: "launchAiTool";
+      sessionId: string;
+      tool: AiTool;
+      savePreference: boolean;
     };
 
 export type TmuxDashboardSessionDto = {
@@ -83,12 +101,19 @@ export type TmuxDashboardPaneDto = {
   isActive: boolean;
 };
 
-export type TmuxDashboardHostMessage = {
-  type: "updateTmuxSessions";
-  sessions: TmuxDashboardSessionDto[];
-  workspace: string;
-  panes?: Record<string, TmuxDashboardPaneDto[]>;
-};
+export type TmuxDashboardHostMessage =
+  | {
+      type: "updateTmuxSessions";
+      sessions: TmuxDashboardSessionDto[];
+      workspace: string;
+      panes?: Record<string, TmuxDashboardPaneDto[]>;
+    }
+  | {
+      type: "showAiToolSelector";
+      sessionId: string;
+      sessionName: string;
+      defaultTool?: AiTool;
+    };
 
 export const ALLOWED_IMAGE_TYPES = [
   "image/png",

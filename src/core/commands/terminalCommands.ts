@@ -168,10 +168,17 @@ export function registerTerminalCommands(
         }
       } catch (error) {
         deps.outputChannel?.error(
-          `[OpenCodeTui] Failed to paste: ${error instanceof Error ? error.message : String(error)}`,
+          `[TerminalProvider] Failed to paste: ${error instanceof Error ? error.message : String(error)}`,
         );
         vscode.window.showErrorMessage("Failed to paste from clipboard");
       }
+    },
+  );
+
+  const focusCommand = vscode.commands.registerCommand(
+    "opencodeTui.focus",
+    () => {
+      vscode.commands.executeCommand("workbench.view.focus", "opencodeTui");
     },
   );
 
@@ -183,5 +190,6 @@ export function registerTerminalCommands(
     sendFileToTerminalCommand,
     restartCommand,
     pasteCommand,
+    focusCommand,
   ];
 }

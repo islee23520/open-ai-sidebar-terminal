@@ -15,7 +15,7 @@ import { InstanceController } from "../services/InstanceController";
 import { PortManager } from "../services/PortManager";
 import { ConnectionResolver } from "../services/ConnectionResolver";
 import { TmuxSessionManager } from "../services/TmuxSessionManager";
-import { TmuxSessionsDashboardProvider } from "../providers/TmuxSessionsDashboardProvider";
+import { TerminalManagerDashboardProvider } from "../providers/TerminalManagerDashboardProvider";
 import {
   registerCommands as registerAllCommands,
   type RegisterCommandDependencies,
@@ -39,8 +39,8 @@ export class ExtensionLifecycle {
   private instanceController: InstanceController | undefined;
   private portManager: PortManager | undefined;
   private tmuxSessionManager: TmuxSessionManager | undefined;
-  private tmuxSessionsDashboardProvider:
-    | TmuxSessionsDashboardProvider
+  private terminalManagerDashboardProvider:
+    | TerminalManagerDashboardProvider
     | undefined;
 
   private static readonly TERMINAL_ID = "opencode-main";
@@ -148,14 +148,15 @@ export class ExtensionLifecycle {
       context.subscriptions.push(provider);
 
       if (this.tmuxSessionManager) {
-        this.tmuxSessionsDashboardProvider = new TmuxSessionsDashboardProvider(
-          context,
-          this.tmuxSessionManager,
-          logger.getChannel(),
-        );
+        this.terminalManagerDashboardProvider =
+          new TerminalManagerDashboardProvider(
+            context,
+            this.tmuxSessionManager,
+            logger.getChannel(),
+          );
         const tmuxDashboardProvider = vscode.window.registerWebviewViewProvider(
-          TmuxSessionsDashboardProvider.viewType,
-          this.tmuxSessionsDashboardProvider,
+          TerminalManagerDashboardProvider.viewType,
+          this.terminalManagerDashboardProvider,
         );
         context.subscriptions.push(tmuxDashboardProvider);
       }
@@ -379,9 +380,9 @@ export class ExtensionLifecycle {
       this.instanceStore = undefined;
     }
 
-    if (this.tmuxSessionsDashboardProvider) {
-      this.tmuxSessionsDashboardProvider.dispose();
-      this.tmuxSessionsDashboardProvider = undefined;
+    if (this.terminalManagerDashboardProvider) {
+      this.terminalManagerDashboardProvider.dispose();
+      this.terminalManagerDashboardProvider = undefined;
     }
 
     this.codeActionProvider = undefined;

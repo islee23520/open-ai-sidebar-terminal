@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as vscodeTypes from "../test/mocks/vscode";
 import { TmuxSessionManager } from "../services/TmuxSessionManager";
-import { TmuxSessionsDashboardProvider } from "./TmuxSessionsDashboardProvider";
+import { TerminalManagerDashboardProvider } from "./TerminalManagerDashboardProvider";
 
 const vscode = await vi.importActual<typeof vscodeTypes>(
   "../test/mocks/vscode",
@@ -13,9 +13,9 @@ vi.mock("vscode", async () => {
 });
 
 /**
- * Tests for the TmuxSessionsDashboardProvider class.
+ * Tests for the TerminalManagerDashboardProvider class.
  */
-describe("TmuxSessionsDashboardProvider", () => {
+describe("TerminalManagerDashboardProvider", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vscode.workspace.workspaceFolders = [
@@ -36,7 +36,7 @@ describe("TmuxSessionsDashboardProvider", () => {
   }
 
   /**
-   * Creates an instance of TmuxSessionsDashboardProvider with mocked dependencies.
+   * Creates an instance of TerminalManagerDashboardProvider with mocked dependencies.
    */
   function createProvider(
     discoverSessions = vi.fn().mockResolvedValue([]),
@@ -50,7 +50,7 @@ describe("TmuxSessionsDashboardProvider", () => {
 
     return {
       discoverSessions,
-      provider: new TmuxSessionsDashboardProvider(
+      provider: new TerminalManagerDashboardProvider(
         context as never,
         tmuxSessionManager,
       ),
@@ -60,7 +60,7 @@ describe("TmuxSessionsDashboardProvider", () => {
   /**
    * Resolves the webview view for the provider and returns the view and message handler.
    */
-  function resolveProvider(provider: TmuxSessionsDashboardProvider) {
+  function resolveProvider(provider: TerminalManagerDashboardProvider) {
     const view = vscode.WebviewView();
     provider.resolveWebviewView(view as never, {} as never, {} as never);
     const messageHandler = vi.mocked(view.webview.onDidReceiveMessage).mock

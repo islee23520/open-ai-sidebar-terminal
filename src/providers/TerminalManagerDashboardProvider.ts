@@ -11,10 +11,10 @@ import {
 /**
  * Terminal Managers dashboard provider. Webview-based tmux session manager with inline pane controls (split, switch, resize, swap, kill). Filters sessions to current workspace.
  */
-export class TmuxSessionsDashboardProvider
+export class TerminalManagerDashboardProvider
   implements vscode.WebviewViewProvider, vscode.Disposable
 {
-  public static readonly viewType = "opencodeTui.tmuxSessions";
+  public static readonly viewType = "opencodeTui.terminalManager";
 
   private view?: vscode.WebviewView;
   private readonly subscriptions: vscode.Disposable[] = [];
@@ -128,7 +128,7 @@ export class TmuxSessionsDashboardProvider
       await this.view.webview.postMessage(message);
     } catch (error) {
       this.outputChannel?.appendLine(
-        `[TmuxSessionsDashboardProvider] Failed to load tmux sessions: ${error instanceof Error ? error.message : String(error)}`,
+        `[TerminalManagerDashboardProvider] Failed to load tmux sessions: ${error instanceof Error ? error.message : String(error)}`,
       );
       const message: TmuxDashboardHostMessage = {
         type: "updateTmuxSessions",
@@ -390,6 +390,25 @@ export class TmuxSessionsDashboardProvider
     }
     .pane-item.active .pane-name::before {
       content: "✓ ";
+      color: var(--vscode-terminal-ansiGreen, #4ec9b0);
+    }
+    .pane-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 2px 4px;
+      border-radius: 3px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .pane-item:hover {
+      background: var(--vscode-list-hoverBackground);
+    }
+    .pane-item.active {
+      font-weight: 600;
+    }
+    .pane-item.active .pane-name::before {
+      content: "\\2713 ";
       color: var(--vscode-terminal-ansiGreen, #4ec9b0);
     }
     .pane-actions {
@@ -679,6 +698,15 @@ export class TmuxSessionsDashboardProvider
   }
 
   /**
+   * Sends text to a specific tmux pane.
+   * @param paneId The pane ID to send text to
+   * @param text The text to send
+   */
+  private async sendTextToPane(paneId: string, text: string): Promise<void> {
+    await this.tmuxSessionManager.sendTextToPane(paneId, text);
+  }
+
+  /**
    * Lists panes for a specific tmux session.
    * @param sessionId The session ID to list panes for
    * @returns Array of pane DTOs
@@ -687,15 +715,6 @@ export class TmuxSessionsDashboardProvider
     sessionId: string,
   ): Promise<TmuxDashboardPaneDto[]> {
     return this.tmuxSessionManager.listPaneDtos(sessionId);
-  }
-
-  /**
-   * Sends text to a specific tmux pane.
-   * @param paneId The pane ID to send text to
-   * @param text The text to send
-   */
-  private async sendTextToPane(paneId: string, text: string): Promise<void> {
-    await this.tmuxSessionManager.sendTextToPane(paneId, text);
   }
 
   /**
@@ -728,7 +747,7 @@ export class TmuxSessionsDashboardProvider
     this.stopPolling();
     this.pollTimer = setInterval(() => {
       void this.postSessionsToWebview();
-    }, TmuxSessionsDashboardProvider.POLL_INTERVAL_MS);
+    }, TerminalManagerDashboardProvider.POLL_INTERVAL_MS);
   }
 
   private stopPolling(): void {
