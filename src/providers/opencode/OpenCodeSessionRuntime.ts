@@ -7,7 +7,7 @@ import { PortManager } from "../../services/PortManager";
 import { ContextSharingService } from "../../services/ContextSharingService";
 import { OutputChannelService } from "../../services/OutputChannelService";
 import { InstanceId, InstanceStore } from "../../services/InstanceStore";
-import { AI_TOOLS } from "../../types";
+import { resolveAiToolConfigs, getToolLaunchCommand } from "../../types";
 import {
   TmuxSessionManager,
   TmuxUnavailableError,
@@ -159,13 +159,15 @@ export class OpenCodeSessionRuntime {
       const config = vscode.workspace.getConfiguration("opencodeTui");
       const enableHttpApi = config.get<boolean>("enableHttpApi", true);
       const httpTimeout = config.get<number>("httpTimeout", 5000);
-      const defaultTool = config.get<string>("defaultAiTool", "opencode");
+      const defaultToolName = config.get<string>("defaultAiTool", "opencode");
+      const tools = resolveAiToolConfigs(config.get("aiTools", []));
 
       let command: string;
-      if (defaultTool && AI_TOOLS.some((t) => t.id === defaultTool)) {
-        command = config.get<string>("command", `${defaultTool} -c`);
+      const defaultTool = tools.find((t) => t.name === defaultToolName);
+      if (defaultTool) {
+        command = getToolLaunchCommand(defaultTool);
       } else {
-        const toolItems = AI_TOOLS.map((t) => ({
+        const toolItems = tools.map((t) => ({
           label: t.label,
           description: `Launch ${t.label} in tmux`,
           tool: t,
@@ -177,10 +179,10 @@ export class OpenCodeSessionRuntime {
           this.isStarting = false;
           return;
         }
-        command = `${picked.tool.command} -c`;
+        command = getToolLaunchCommand(picked.tool);
         await config.update(
           "defaultAiTool",
-          picked.tool.id,
+          picked.tool.name,
           vscode.ConfigurationTarget.Global,
         );
       }

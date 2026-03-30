@@ -27,17 +27,72 @@ export type WebviewMessage =
   | { type: "createTmuxSession" }
   | { type: "switchNativeShell" };
 
-export type AiTool = "opencode" | "claude" | "codex";
+export type AiTool = string;
 
-export const AI_TOOLS: readonly {
-  id: AiTool;
+export interface AiToolConfig {
+  name: string;
   label: string;
-  command: string;
-}[] = [
-  { id: "opencode", label: "OpenCode", command: "opencode" },
-  { id: "claude", label: "Claude", command: "claude" },
-  { id: "codex", label: "Codex", command: "codex" },
+  path: string;
+  args: string[];
+}
+
+/** Built-in default tools — used when no user config exists */
+export const DEFAULT_AI_TOOLS: readonly AiToolConfig[] = [
+  { name: "opencode", label: "OpenCode", path: "", args: ["-c"] },
+  { name: "claude", label: "Claude", path: "", args: [] },
+  { name: "codex", label: "Codex", path: "", args: [] },
 ] as const;
+
+/** @deprecated Use resolveAiToolConfigs() instead */
+export const AI_TOOLS = DEFAULT_AI_TOOLS;
+
+/** Resolves AI tool configs from VS Code settings, merging with defaults */
+export function resolveAiToolConfigs(
+  userTools: readonly unknown[],
+): AiToolConfig[] {
+  if (!Array.isArray(userTools) || userTools.length === 0) {
+    return [...DEFAULT_AI_TOOLS];
+  }
+  return userTools
+    .filter(
+      (t): t is Record<string, unknown> =>
+        t !== null &&
+        typeof t === "object" &&
+        typeof (t as Record<string, unknown>).name === "string" &&
+        typeof (t as Record<string, unknown>).label === "string",
+    )
+    .map((t) => ({
+      name: String(t.name),
+      label: String(t.label),
+      path: typeof t.path === "string" ? t.path : "",
+      args: Array.isArray(t.args) ? t.args.map(String) : [],
+    }));
+}
+
+/** Get the launch command string for a tool config */
+export function getToolLaunchCommand(tool: AiToolConfig): string {
+  const exe = tool.path || tool.name;
+  const args = tool.args.length > 0 ? ` ${tool.args.join(" ")}` : "";
+  return exe + args;
+}
+
+/** Get detection patterns for matching pane_current_command */
+export function getToolDetectionPatterns(tool: AiToolConfig): string[] {
+  const patterns: string[] = [tool.name];
+  patterns.push(`${tool.name}.exe`);
+  if (tool.path) {
+    const basename = tool.path
+      .split("/")
+      .pop()
+      ?.split("\\")
+      .pop()
+      ?.replace(/\.exe$/i, "");
+    if (basename && basename !== tool.name) {
+      patterns.push(basename);
+    }
+  }
+  return patterns;
+}
 
 export type TmuxDashboardActionMessage =
   | { action: "refresh" }
@@ -60,12 +115,6 @@ export type TmuxDashboardActionMessage =
       direction: "h" | "v";
       command: string;
     }
-  | {
-      action: "sendTextToPane";
-      sessionId: string;
-      paneId: string;
-      text: string;
-    }
   | { action: "killPane"; sessionId: string; paneId: string }
   | {
       action: "resizePane";
@@ -83,7 +132,7 @@ export type TmuxDashboardActionMessage =
   | {
       action: "launchAiTool";
       sessionId: string;
-      tool: AiTool;
+      tool: string;
       savePreference: boolean;
     };
 
@@ -100,6 +149,7 @@ export type TmuxDashboardPaneDto = {
   index: number;
   title: string;
   isActive: boolean;
+  currentCommand?: string;
 };
 
 export type TmuxDashboardHostMessage =
@@ -109,12 +159,14 @@ export type TmuxDashboardHostMessage =
       workspace: string;
       panes?: Record<string, TmuxDashboardPaneDto[]>;
       showingAll?: boolean;
+      tools?: AiToolConfig[];
     }
   | {
       type: "showAiToolSelector";
       sessionId: string;
       sessionName: string;
-      defaultTool?: AiTool;
+      defaultTool?: string;
+      tools?: AiToolConfig[];
     };
 
 export const ALLOWED_IMAGE_TYPES = [

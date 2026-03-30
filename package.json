@@ -374,15 +374,64 @@
           ],
           "description": "Diagnostic severities that trigger code actions"
         },
+        "opencodeTui.aiTools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Unique identifier for the AI tool"
+              },
+              "label": {
+                "type": "string",
+                "description": "Display name for the AI tool"
+              },
+              "path": {
+                "type": "string",
+                "description": "Path to the executable. Empty or unset = use bare command name (resolved from PATH)"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Default arguments to pass when launching this tool"
+              }
+            },
+            "required": [
+              "name",
+              "label"
+            ]
+          },
+          "default": [
+            {
+              "name": "opencode",
+              "label": "OpenCode",
+              "path": "",
+              "args": [
+                "-c"
+              ]
+            },
+            {
+              "name": "claude",
+              "label": "Claude",
+              "path": "",
+              "args": []
+            },
+            {
+              "name": "codex",
+              "label": "Codex",
+              "path": "",
+              "args": []
+            }
+          ],
+          "description": "Configure AI coding tools with custom paths and arguments"
+        },
         "opencodeTui.defaultAiTool": {
           "type": "string",
-          "enum": [
-            "opencode",
-            "claude",
-            "codex"
-          ],
           "default": "opencode",
-          "description": "Default AI tool to launch when creating a new tmux session"
+          "description": "Name of the default AI tool to launch when creating a new tmux session"
         }
       }
     }

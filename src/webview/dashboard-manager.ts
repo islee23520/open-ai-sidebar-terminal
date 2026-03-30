@@ -1,0 +1,437 @@
+// External script for Terminal Managers dashboard — VS Code webview CSP blocks inline scripts,
+// so this must be loaded via <script src="..."> instead of embedded in HTML.
+
+declare function acquireVsCodeApi(): {
+  postMessage: (message: unknown) => void;
+  getState: () => unknown;
+  setState: (state: unknown) => void;
+};
+
+const vscode = acquireVsCodeApi();
+
+interface AiToolConfig {
+  name: string;
+  label: string;
+  path: string;
+  args: string[];
+}
+
+interface TmuxDashboardSessionDto {
+  id: string;
+  name: string;
+  workspace: string;
+  isActive: boolean;
+  paneCount?: number;
+}
+
+interface TmuxDashboardPaneDto {
+  paneId: string;
+  index: number;
+  title: string;
+  isActive: boolean;
+  currentCommand?: string;
+}
+
+interface DashboardPayload {
+  sessions: TmuxDashboardSessionDto[];
+  workspace: string;
+  panes: Record<string, TmuxDashboardPaneDto[]>;
+  showingAll?: boolean;
+  tools?: AiToolConfig[];
+}
+
+const expandedSessions = new Set<string>();
+let lastPayload: DashboardPayload = { sessions: [], workspace: "", panes: {} };
+
+let aiSelectorVisible = false;
+let aiSelectorFocusedIndex = 0;
+let aiSelectorSessionId: string | null = null;
+let aiSelectorTools: AiToolConfig[] = [];
+
+function detectToolIcon(currentCommand: string | undefined): string {
+  if (!currentCommand || aiSelectorTools.length === 0) return "";
+  for (const t of aiSelectorTools) {
+    const patterns = [t.name, t.name + ".exe"];
+    if (t.path) {
+      const basename = t.path
+        .split("/")
+        .pop()
+        ?.split("\\")
+        .pop()
+        ?.replace(/\.exe$/i, "");
+      if (basename && basename !== t.name) {
+        patterns.push(basename);
+      }
+    }
+    for (const p of patterns) {
+      if (currentCommand.indexOf(p) !== -1) {
+        return `<span class="pane-tool-badge ${escapeHtml(t.name)}">${escapeHtml(t.label.charAt(0))}</span>`;
+      }
+    }
+  }
+  return "";
+}
+
+function escapeHtml(value: string | number | undefined): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function render(payload: DashboardPayload): void {
+  lastPayload = payload || { sessions: [], workspace: "", panes: {} };
+
+  const workspace = document.getElementById("workspace");
+  const list = document.getElementById("session-list");
+  const banner = document.getElementById("return-banner");
+  const returnWorkspace = document.getElementById("return-workspace");
+  if (!workspace || !list) {
+    return;
+  }
+
+  workspace.textContent =
+    "Workspace: " +
+    (payload.workspace || "-") +
+    (payload.showingAll ? " (all)" : "");
+
+  const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+  const panes = payload.panes || {};
+
+  const activeOther = sessions.find(
+    (s) => s.isActive && s.workspace !== payload.workspace,
+  );
+
+  if (banner && returnWorkspace) {
+    if (activeOther) {
+      banner.style.display = "flex";
+      returnWorkspace.textContent = payload.workspace || "current workspace";
+    } else {
+      banner.style.display = "none";
+    }
+  }
+
+  if (sessions.length === 0) {
+    list.innerHTML =
+      '<div class="empty">No tmux sessions for this workspace.</div>';
+    return;
+  }
+
+  list.innerHTML = sessions
+    .map((s) => {
+      const activeClass = s.isActive ? " active" : "";
+      const statusText = s.isActive ? "Current" : "Available";
+      const buttonLabel = s.isActive ? "Current" : "Switch";
+      const disabled = s.isActive ? " disabled" : "";
+      const sessionPanes = panes[s.id] || [];
+      const paneCount = sessionPanes.length;
+      const isExpanded = expandedSessions.has(s.id);
+
+      return [
+        `<div class="session-card${activeClass}">`,
+        '<div class="row">',
+        "<div>",
+        `<strong>${escapeHtml(s.name)}</strong>`,
+        `<div class="status">${statusText}</div>`,
+        "</div>",
+        `<button class="primary" data-session-id="${escapeHtml(s.id)}" title="${s.isActive ? "Currently active session" : "Switch to this session"}"${disabled}>${buttonLabel}</button>`,
+        `<button class="danger" data-action="killSession" data-session-id="${escapeHtml(s.id)}" title="Kill Session"${s.isActive ? " disabled" : ""}>✕</button>`,
+        "</div>",
+        '<div class="meta-grid">',
+        `<div class="meta">tmux session: ${escapeHtml(s.id)}</div>`,
+        `<div class="meta">workspace: ${escapeHtml(s.workspace)}</div>`,
+        "</div>",
+        `<div class="pane-header" data-session-id="${escapeHtml(s.id)}">`,
+        `<span>${isExpanded ? "▼" : "▶"} Panes (${paneCount})</span>`,
+        "<div>",
+        `<button class="pane-split-btn" data-action="splitH" data-session-id="${escapeHtml(s.id)}" title="Split Horizontal">↕</button>`,
+        `<button class="pane-split-btn" data-action="splitV" data-session-id="${escapeHtml(s.id)}" title="Split Vertical">↔</button>`,
+        "</div>",
+        "</div>",
+        isExpanded
+          ? `<div class="pane-list">${sessionPanes
+              .map((p) => {
+                const activePaneClass = p.isActive ? " active" : "";
+                return `<div class="pane-item${activePaneClass}" data-session-id="${escapeHtml(s.id)}" data-pane-id="${escapeHtml(p.paneId)}"><span class="pane-name">${detectToolIcon(p.currentCommand)}Pane ${p.index}${p.title ? ": " + escapeHtml(p.title) : ""}</span><div class="pane-actions"><button class="pane-action-switch" title="Switch">⇥</button><button class="pane-action-kill" title="Kill Pane">✕</button></div></div>`;
+              })
+              .join("")}</div>`
+          : "",
+        "</div>",
+      ].join("");
+    })
+    .join("");
+}
+
+function showAiToolSelector(
+  sessionId: string,
+  sessionName: string,
+  defaultTool?: string,
+  tools?: AiToolConfig[],
+): void {
+  if (tools && tools.length > 0) {
+    aiSelectorTools = tools;
+  }
+  aiSelectorSessionId = sessionId;
+  aiSelectorVisible = true;
+  aiSelectorFocusedIndex = defaultTool
+    ? aiSelectorTools.findIndex((t) => t.name === defaultTool)
+    : 0;
+  if (aiSelectorFocusedIndex < 0) {
+    aiSelectorFocusedIndex = 0;
+  }
+
+  const optionsContainer = document.getElementById("ai-tool-options");
+  const subtitleEl = document.getElementById("ai-selector-session");
+  if (subtitleEl) {
+    subtitleEl.textContent = "Session: " + sessionName;
+  }
+
+  if (optionsContainer) {
+    optionsContainer.innerHTML = aiSelectorTools
+      .map((t, idx) => {
+        const focusedClass = idx === aiSelectorFocusedIndex ? " focused" : "";
+        return `<div class="ai-tool-option${focusedClass}" data-tool-id="${escapeHtml(t.name)}" data-tool-command="${escapeHtml(t.path || t.name)}"><div class="ai-tool-icon ${escapeHtml(t.name)}">${escapeHtml(t.label.charAt(0))}</div><span class="ai-tool-label">${escapeHtml(t.label)}</span><span class="ai-tool-command">${escapeHtml(t.path || t.name)}</span></div>`;
+      })
+      .join("");
+  }
+
+  const saveCheckbox = document.getElementById("ai-save-default");
+  if (saveCheckbox) {
+    (saveCheckbox as HTMLInputElement).checked = false;
+  }
+
+  const backdrop = document.getElementById("ai-selector");
+  if (backdrop) {
+    backdrop.style.display = "flex";
+  }
+}
+
+function hideAiToolSelector(): void {
+  aiSelectorVisible = false;
+  aiSelectorSessionId = null;
+  const backdrop = document.getElementById("ai-selector");
+  if (backdrop) {
+    backdrop.style.display = "none";
+  }
+}
+
+function updateAiSelectorFocus(): void {
+  const options = document.querySelectorAll(".ai-tool-option");
+  options.forEach((el, idx) => {
+    if (idx === aiSelectorFocusedIndex) {
+      el.classList.add("focused");
+      el.scrollIntoView({ block: "nearest" });
+    } else {
+      el.classList.remove("focused");
+    }
+  });
+}
+
+function selectAiTool(toolId: string): void {
+  const tool = aiSelectorTools.find((t) => t.name === toolId);
+  if (!tool) return;
+  const saveCheckbox = document.getElementById("ai-save-default");
+  const savePref = (saveCheckbox as HTMLInputElement).checked;
+  vscode.postMessage({
+    action: "launchAiTool",
+    sessionId: aiSelectorSessionId,
+    tool: tool.name,
+    savePreference: savePref,
+  });
+  hideAiToolSelector();
+}
+
+document.addEventListener("click", (event) => {
+  const target = event.composedPath()?.[0] ?? event.target;
+  if (!target || !(target instanceof Element)) {
+    return;
+  }
+
+  const sessions = Array.isArray(lastPayload.sessions)
+    ? lastPayload.sessions
+    : [];
+
+  if (target.id === "return-btn" || target.closest("#return-btn")) {
+    const matching = sessions.find(
+      (s) => s.workspace === lastPayload.workspace,
+    );
+    if (matching) {
+      vscode.postMessage({ action: "activate", sessionId: matching.id });
+    } else {
+      vscode.postMessage({ action: "create" });
+    }
+    return;
+  }
+
+  if (target.classList.contains("pane-split-btn")) {
+    const button = target;
+    if (!(button instanceof HTMLButtonElement)) {
+      return;
+    }
+    const sessionId = button.dataset.sessionId;
+    const direction = button.dataset.action === "splitH" ? "h" : "v";
+    vscode.postMessage({ action: "splitPane", sessionId, direction });
+    return;
+  }
+
+  const paneHeader = target.closest(".pane-header");
+  if (paneHeader instanceof HTMLElement) {
+    const sessionId = paneHeader.dataset.sessionId;
+    if (sessionId) {
+      if (expandedSessions.has(sessionId)) {
+        expandedSessions.delete(sessionId);
+      } else {
+        expandedSessions.add(sessionId);
+      }
+      render(lastPayload);
+    }
+    return;
+  }
+
+  if (target.closest(".pane-action-switch")) {
+    const item = target.closest(".pane-item");
+    if (item instanceof HTMLElement) {
+      vscode.postMessage({
+        action: "switchPane",
+        sessionId: item.dataset.sessionId,
+        paneId: item.dataset.paneId,
+      });
+    }
+    return;
+  }
+
+  if (target.closest(".pane-action-kill")) {
+    const item = target.closest(".pane-item");
+    if (item instanceof HTMLElement) {
+      const sessionId = item.dataset.sessionId;
+      const paneId = item.dataset.paneId;
+      const payloadPanes =
+        (lastPayload.panes && sessionId ? lastPayload.panes[sessionId] : []) ||
+        [];
+      if (payloadPanes.length <= 1) {
+        window.alert("Cannot kill the last pane — use 'Kill Session' instead.");
+        return;
+      }
+      if (paneId && window.confirm("Kill pane " + paneId + "?")) {
+        vscode.postMessage({
+          action: "killPane",
+          sessionId,
+          paneId,
+        });
+      }
+    }
+    return;
+  }
+
+  if (target.closest(".ai-tool-option")) {
+    const toolOption = target.closest(".ai-tool-option");
+    if (toolOption instanceof HTMLElement) {
+      selectAiTool(toolOption.dataset.toolId!);
+    }
+    return;
+  }
+
+  if (target.id === "ai-selector" && !target.closest(".ai-selector-card")) {
+    hideAiToolSelector();
+    return;
+  }
+
+  if (target.closest('[data-action="killSession"]')) {
+    const button = target.closest('[data-action="killSession"]');
+    if (button instanceof HTMLButtonElement && !button.disabled) {
+      const sessionId = button.dataset.sessionId;
+      if (sessionId && window.confirm("Kill tmux session " + sessionId + "?")) {
+        vscode.postMessage({ action: "killSession", sessionId });
+      }
+    }
+    return;
+  }
+
+  if (!(target instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  const action = target.dataset.action;
+  if (
+    action === "refresh" ||
+    action === "create" ||
+    action === "switchNativeShell"
+  ) {
+    vscode.postMessage({ action });
+    return;
+  }
+
+  const sessionId = target.dataset.sessionId;
+  if (sessionId) {
+    vscode.postMessage({ action: "activate", sessionId });
+  }
+});
+
+interface HostMessage {
+  type: string;
+  sessions?: TmuxDashboardSessionDto[];
+  workspace?: string;
+  panes?: Record<string, TmuxDashboardPaneDto[]>;
+  showingAll?: boolean;
+  tools?: AiToolConfig[];
+  sessionId?: string;
+  sessionName?: string;
+  defaultTool?: string;
+}
+
+window.addEventListener("message", (event) => {
+  const message = event.data as HostMessage;
+  if (message && message.type === "updateTmuxSessions") {
+    if (message.tools && message.tools.length > 0) {
+      aiSelectorTools = message.tools;
+    }
+    render(message as DashboardPayload);
+  }
+  if (message && message.type === "showAiToolSelector") {
+    showAiToolSelector(
+      message.sessionId!,
+      message.sessionName!,
+      message.defaultTool,
+      message.tools,
+    );
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (!aiSelectorVisible) {
+    return;
+  }
+
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    aiSelectorFocusedIndex =
+      (aiSelectorFocusedIndex + 1) % aiSelectorTools.length;
+    updateAiSelectorFocus();
+    return;
+  }
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    aiSelectorFocusedIndex =
+      (aiSelectorFocusedIndex - 1 + aiSelectorTools.length) %
+      aiSelectorTools.length;
+    updateAiSelectorFocus();
+    return;
+  }
+  if (event.key === "Enter") {
+    event.preventDefault();
+    const tool = aiSelectorTools[aiSelectorFocusedIndex];
+    if (tool) {
+      selectAiTool(tool.name);
+    }
+    return;
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    hideAiToolSelector();
+    return;
+  }
+});
+
+vscode.postMessage({ action: "refresh" });

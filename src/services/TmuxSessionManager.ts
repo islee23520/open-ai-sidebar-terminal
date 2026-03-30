@@ -33,6 +33,7 @@ export interface TmuxPane {
   index: number;
   title: string;
   isActive: boolean;
+  currentCommand?: string;
 }
 
 export class TmuxUnavailableError extends Error {
@@ -327,7 +328,8 @@ export class TmuxSessionManager {
 
   public async listPanes(sessionId: string): Promise<TmuxPane[]> {
     try {
-      const format = "#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_active}";
+      const format =
+        "#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_active}\t#{pane_current_command}";
       const stdout = await this.runTmux([
         "list-panes",
         "-t",
@@ -340,12 +342,16 @@ export class TmuxSessionManager {
         .map((line) => line.trim())
         .filter((line) => line.length > 0)
         .map((line) => {
-          const [paneId, index, title, active] = line.split("\t");
+          const [paneId, index, title, active, currentCommand] =
+            line.split("\t");
           return {
             paneId: paneId ?? "",
             index: Number(index),
             title: title ?? "",
             isActive: active === "1",
+            ...(currentCommand !== undefined
+              ? { currentCommand: currentCommand ?? "" }
+              : {}),
           };
         });
     } catch (error) {
@@ -368,6 +374,9 @@ export class TmuxSessionManager {
       index: p.index,
       title: p.title,
       isActive: p.isActive,
+      ...(p.currentCommand !== undefined
+        ? { currentCommand: p.currentCommand }
+        : {}),
     }));
   }
 

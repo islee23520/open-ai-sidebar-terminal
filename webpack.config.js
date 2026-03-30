@@ -43,10 +43,18 @@ const extensionConfig = {
 const webviewConfig = {
   target: "web",
   mode: "none",
-  entry: "./src/webview/main.ts",
+  entry: {
+    main: "./src/webview/main.ts",
+    dashboard: "./src/webview/dashboard-manager.ts",
+  },
   output: {
     path: path.resolve(__dirname, "dist"),
-    filename: "webview.js",
+    filename: (pathData) => {
+      if (pathData.chunk.name === "main") {
+        return "webview.js";
+      }
+      return "[name].js";
+    },
   },
   resolve: {
     extensions: [".ts", ".js"],

@@ -7,7 +7,10 @@ import {
   TmuxDashboardPaneDto,
   TmuxDashboardSessionDto,
   AiTool,
-  AI_TOOLS,
+  AiToolConfig,
+  resolveAiToolConfigs,
+  getToolLaunchCommand,
+  getToolDetectionPatterns,
 } from "../types";
 
 /**
@@ -46,6 +49,7 @@ export class TerminalManagerDashboardProvider
     _context: vscode.WebviewViewResolveContext,
     _token: vscode.CancellationToken,
   ): void {
+    this.disposeSubscriptions();
     this.view = webviewView;
 
     webviewView.webview.options = {
@@ -151,12 +155,18 @@ export class TerminalManagerDashboardProvider
         paneCount: panesMap[session.id]?.length ?? 0,
       }));
 
+      const config = vscode.workspace.getConfiguration("opencodeTui");
+      const tools: AiToolConfig[] = resolveAiToolConfigs(
+        config.get("aiTools", []),
+      );
+
       const message: TmuxDashboardHostMessage = {
         type: "updateTmuxSessions",
         sessions: payload,
         workspace: workspaceName ?? "No workspace",
         panes: panesMap,
         showingAll: showAllFallback || undefined,
+        tools,
       };
 
       const posted = this.view.webview.postMessage(message);
@@ -212,7 +222,23 @@ export class TerminalManagerDashboardProvider
           )) as string | undefined;
           await this.postSessionsToWebview();
           if (newSessionId) {
-            await this.showAiToolSelector(newSessionId, newSessionId);
+            const config = vscode.workspace.getConfiguration("opencodeTui");
+            const defaultToolName = config.get<AiTool>(
+              "defaultAiTool",
+              "opencode",
+            );
+            const tools: AiToolConfig[] = resolveAiToolConfigs(
+              config.get("aiTools", []),
+            );
+            const defaultTool = tools.find((t) => t.name === defaultToolName);
+            if (defaultTool) {
+              await this.tmuxSessionManager.sendTextToPane(
+                newSessionId,
+                getToolLaunchCommand(defaultTool),
+              );
+            } else {
+              await this.showAiToolSelector(newSessionId, newSessionId);
+            }
           }
         }
         return;
@@ -240,10 +266,6 @@ export class TerminalManagerDashboardProvider
           message.direction,
           { command: message.command },
         );
-        await this.postSessionsToWebview();
-        return;
-      case "sendTextToPane":
-        await this.sendTextToPane(message.paneId, message.text);
         await this.postSessionsToWebview();
         return;
       case "killPane":
@@ -287,7 +309,13 @@ export class TerminalManagerDashboardProvider
    * @param webview The webview to generate HTML for
    * @returns The HTML string
    */
+  private static readonly HTML_VERSION = 10;
+
   private getHtmlContent(webview: vscode.Webview): string {
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "dist", "dashboard.js"),
+    );
+
     const nonce = this.getNonce();
 
     return `<!DOCTYPE html>
@@ -296,7 +324,7 @@ export class TerminalManagerDashboardProvider
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Terminal Managers</title>
+  <title>Terminal Managers v${TerminalManagerDashboardProvider.HTML_VERSION}</title>
   <style>
     body {
       margin: 0;
@@ -467,6 +495,21 @@ export class TerminalManagerDashboardProvider
       content: "\\2713 ";
       color: var(--vscode-terminal-ansiGreen, #4ec9b0);
     }
+    .pane-tool-badge {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      line-height: 18px;
+      text-align: center;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .pane-tool-badge.opencode { background: #4ec9b0; color: #1e1e1e; }
+    .pane-tool-badge.claude { background: #d97706; color: #ffffff; }
+    .pane-tool-badge.codex { background: #6366f1; color: #ffffff; }
     .pane-actions {
       display: flex;
       gap: 4px;
@@ -629,376 +672,9 @@ export class TerminalManagerDashboardProvider
     </div>
   </div>
 
-  <script nonce="${nonce}">
-    const vscode = acquireVsCodeApi();
-    const expandedSessions = new Set();
-    let lastPayload = { sessions: [], workspace: "", panes: {} };
-    vscode.postMessage({ action: "refresh" });
-
-    var aiSelectorVisible = false;
-    var aiSelectorFocusedIndex = 0;
-    var aiSelectorSessionId = null;
-    var aiSelectorTools = [
-      { id: "opencode", label: "OpenCode", command: "opencode" },
-      { id: "claude", label: "Claude", command: "claude" },
-      { id: "codex", label: "Codex", command: "codex" }
-    ];
-
-    function escapeHtml(value) {
-      return String(value)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#39;");
-    }
-
-    function render(payload) {
-      lastPayload = payload || { sessions: [], workspace: "", panes: {} };
-
-      const workspace = document.getElementById("workspace");
-      const list = document.getElementById("session-list");
-      const banner = document.getElementById("return-banner");
-      const returnWorkspace = document.getElementById("return-workspace");
-      if (!workspace || !list) {
-        return;
-      }
-
-      workspace.textContent = "Workspace: " + (payload.workspace || "-") + (payload.showingAll ? " (all)" : "");
-
-      const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
-      const panes = payload.panes || {};
-
-      const activeOther = sessions.find(
-        (s) => s.isActive && s.workspace !== payload.workspace,
-      );
-
-      if (banner && returnWorkspace) {
-        if (activeOther) {
-          banner.style.display = "flex";
-          returnWorkspace.textContent = payload.workspace || "current workspace";
-        } else {
-          banner.style.display = "none";
-        }
-      }
-
-      if (sessions.length === 0) {
-        list.innerHTML = '<div class="empty">No tmux sessions for this workspace.</div>';
-        return;
-      }
-
-      list.innerHTML = sessions
-        .map((s) => {
-          const activeClass = s.isActive ? " active" : "";
-          const statusText = s.isActive ? "Current" : "Available";
-          const buttonLabel = s.isActive ? "Current" : "Switch";
-          const disabled = s.isActive ? " disabled" : "";
-          const sessionPanes = panes[s.id] || [];
-          const paneCount = sessionPanes.length;
-          const isExpanded = expandedSessions.has(s.id);
-
-          return [
-            '<div class="session-card' + activeClass + '">',
-            '<div class="row">',
-            '<div>',
-            '<strong>' + escapeHtml(s.name) + '</strong>',
-            '<div class="status">' + statusText + '</div>',
-            '</div>',
-            '<button class="primary" data-session-id="' + escapeHtml(s.id) + '" title="' + (s.isActive ? 'Currently active session' : 'Switch to this session') + '"' + disabled + '>' + buttonLabel + '</button>',
-            '<button class="danger" data-action="killSession" data-session-id="' + escapeHtml(s.id) + '" title="Kill Session"' + (s.isActive ? ' disabled' : '') + '>✕</button>',
-            '</div>',
-            '<div class="meta-grid">',
-            '<div class="meta">tmux session: ' + escapeHtml(s.id) + '</div>',
-            '<div class="meta">workspace: ' + escapeHtml(s.workspace) + '</div>',
-            '</div>',
-            '<div class="pane-header" data-session-id="' + escapeHtml(s.id) + '">',
-            '<span>' + (isExpanded ? "▼" : "▶") + ' Panes (' + paneCount + ")</span>",
-            "<div>",
-            '<button class="pane-split-btn" data-action="splitH" data-session-id="' + escapeHtml(s.id) + '" title="Split Horizontal">↕</button>',
-            '<button class="pane-split-btn" data-action="splitV" data-session-id="' + escapeHtml(s.id) + '" title="Split Vertical">↔</button>',
-            "</div>",
-            "</div>",
-            isExpanded
-              ? '<div class="pane-list">' +
-                sessionPanes
-                  .map((p) => {
-                    const activePaneClass = p.isActive ? " active" : "";
-                    return (
-                      '<div class="pane-item' +
-                      activePaneClass +
-                      '" data-session-id="' +
-                      escapeHtml(s.id) +
-                      '" data-pane-id="' +
-                      escapeHtml(p.paneId) +
-                      '">' +
-                      '<span class="pane-name">Pane ' +
-                      p.index +
-                      (p.title ? ": " + escapeHtml(p.title) : "") +
-                      "</span>" +
-                      '<div class="pane-actions">' +
-                      '<button class="pane-action-switch" title="Switch">⇥</button>' +
-                      '<button class="pane-action-send" title="Send Text">⌨</button>' +
-                      '<button class="pane-action-kill" title="Kill Pane">✕</button>' +
-                      "</div></div>"
-                    );
-                  })
-                  .join("") +
-                "</div>"
-              : "",
-            '</div>'
-          ].join("");
-        })
-        .join("");
-    }
-
-    function showAiToolSelector(sessionId, sessionName, defaultTool) {
-      aiSelectorSessionId = sessionId;
-      aiSelectorVisible = true;
-      aiSelectorFocusedIndex = defaultTool
-        ? aiSelectorTools.findIndex(function(t) { return t.id === defaultTool; })
-        : 0;
-      if (aiSelectorFocusedIndex < 0) { aiSelectorFocusedIndex = 0; }
-
-      var optionsContainer = document.getElementById("ai-tool-options");
-      var subtitleEl = document.getElementById("ai-selector-session");
-      if (subtitleEl) { subtitleEl.textContent = "Session: " + sessionName; }
-
-      if (optionsContainer) {
-        optionsContainer.innerHTML = aiSelectorTools.map(function(tool, idx) {
-          var focusedClass = idx === aiSelectorFocusedIndex ? " focused" : "";
-          return '<div class="ai-tool-option' + focusedClass + '" data-tool-id="' + escapeHtml(tool.id) + '" data-tool-command="' + escapeHtml(tool.command) + '">'
-            + '<div class="ai-tool-icon ' + escapeHtml(tool.id) + '">' + escapeHtml(tool.label.charAt(0)) + '</div>'
-            + '<span class="ai-tool-label">' + escapeHtml(tool.label) + '</span>'
-            + '<span class="ai-tool-command">' + escapeHtml(tool.command) + '</span>'
-            + '</div>';
-        }).join("");
-      }
-
-      var saveCheckbox = document.getElementById("ai-save-default");
-      if (saveCheckbox) { saveCheckbox.checked = false; }
-
-      var backdrop = document.getElementById("ai-selector");
-      if (backdrop) { backdrop.style.display = "flex"; }
-    }
-
-    function hideAiToolSelector() {
-      aiSelectorVisible = false;
-      aiSelectorSessionId = null;
-      var backdrop = document.getElementById("ai-selector");
-      if (backdrop) { backdrop.style.display = "none"; }
-    }
-
-    function updateAiSelectorFocus() {
-      var options = document.querySelectorAll(".ai-tool-option");
-      options.forEach(function(el, idx) {
-        if (idx === aiSelectorFocusedIndex) {
-          el.classList.add("focused");
-          el.scrollIntoView({ block: "nearest" });
-        } else {
-          el.classList.remove("focused");
-        }
-      });
-    }
-
-    function selectAiTool(toolId) {
-      var saveCheckbox = document.getElementById("ai-save-default");
-      var savePref = saveCheckbox ? saveCheckbox.checked : false;
-      vscode.postMessage({
-        action: "launchAiTool",
-        sessionId: aiSelectorSessionId,
-        tool: toolId,
-        savePreference: savePref
-      });
-      hideAiToolSelector();
-    }
-
-    document.addEventListener("click", (event) => {
-      const target = event.composedPath()?.[0] ?? event.target;
-      if (!target || !(target instanceof Element)) {
-        return;
-      }
-
-      const sessions = Array.isArray(lastPayload.sessions)
-        ? lastPayload.sessions
-        : [];
-
-      if (target.id === "return-btn" || target.closest("#return-btn")) {
-        const matching = sessions.find((s) => s.workspace === lastPayload.workspace);
-        if (matching) {
-          vscode.postMessage({ action: "activate", sessionId: matching.id });
-        } else {
-          vscode.postMessage({ action: "create" });
-        }
-        return;
-      }
-
-      if (target.classList.contains("pane-split-btn")) {
-        const button = target;
-        if (!(button instanceof HTMLButtonElement)) {
-          return;
-        }
-        const sessionId = button.dataset.sessionId;
-        const direction = button.dataset.action === "splitH" ? "h" : "v";
-        vscode.postMessage({ action: "splitPane", sessionId, direction });
-        return;
-      }
-
-      const paneHeader = target.closest(".pane-header");
-      if (paneHeader instanceof HTMLElement) {
-        const sessionId = paneHeader.dataset.sessionId;
-        if (sessionId) {
-          if (expandedSessions.has(sessionId)) {
-            expandedSessions.delete(sessionId);
-          } else {
-            expandedSessions.add(sessionId);
-          }
-          render(lastPayload);
-        }
-        return;
-      }
-
-      if (target.closest(".pane-action-switch")) {
-        const item = target.closest(".pane-item");
-        if (item instanceof HTMLElement) {
-          vscode.postMessage({
-            action: "switchPane",
-            sessionId: item.dataset.sessionId,
-            paneId: item.dataset.paneId,
-          });
-        }
-        return;
-      }
-
-      if (target.closest(".pane-action-send")) {
-        const item = target.closest(".pane-item");
-        if (item instanceof HTMLElement) {
-          const text = window.prompt("Send to pane:", "");
-          if (text !== null && text !== "") {
-            vscode.postMessage({
-              action: "sendTextToPane",
-              sessionId: item.dataset.sessionId,
-              paneId: item.dataset.paneId,
-              text,
-            });
-          }
-        }
-        return;
-      }
-
-      if (target.closest(".pane-action-kill")) {
-        const item = target.closest(".pane-item");
-        if (item instanceof HTMLElement) {
-          const sessionId = item.dataset.sessionId;
-          const paneId = item.dataset.paneId;
-          const payloadPanes =
-            (lastPayload.panes && sessionId ? lastPayload.panes[sessionId] : []) ||
-            [];
-          if (payloadPanes.length <= 1) {
-            window.alert("Cannot kill the last pane — use 'Kill Session' instead.");
-            return;
-          }
-          if (paneId && window.confirm("Kill pane " + paneId + "?")) {
-            vscode.postMessage({
-              action: "killPane",
-              sessionId,
-              paneId,
-            });
-          }
-        }
-        return;
-      }
-
-      if (target.closest(".ai-tool-option")) {
-        var toolOption = target.closest(".ai-tool-option");
-        if (toolOption instanceof HTMLElement) {
-          selectAiTool(toolOption.dataset.toolId);
-        }
-        return;
-      }
-
-      if (target.id === "ai-selector" && !target.closest(".ai-selector-card")) {
-        hideAiToolSelector();
-        return;
-      }
-
-      if (target.closest('[data-action="killSession"]')) {
-        const button = target.closest('[data-action="killSession"]');
-        if (button instanceof HTMLButtonElement && !button.disabled) {
-          const sessionId = button.dataset.sessionId;
-          if (sessionId && window.confirm("Kill tmux session " + sessionId + "?")) {
-            vscode.postMessage({ action: "killSession", sessionId });
-          }
-        }
-        return;
-      }
-
-      if (!(target instanceof HTMLButtonElement)) {
-        return;
-      }
-
-      const action = target.dataset.action;
-      if (action === "refresh" || action === "create" || action === "switchNativeShell") {
-        vscode.postMessage({ action });
-        return;
-      }
-
-      const sessionId = target.dataset.sessionId;
-      if (sessionId) {
-        vscode.postMessage({ action: "activate", sessionId });
-      }
-    });
-
-    window.addEventListener("message", (event) => {
-      const message = event.data;
-      if (message && message.type === "updateTmuxSessions") {
-        render(message);
-      }
-      if (message && message.type === "showAiToolSelector") {
-        showAiToolSelector(message.sessionId, message.sessionName, message.defaultTool);
-      }
-    });
-
-    document.addEventListener("keydown", (event) => {
-      if (!aiSelectorVisible) { return; }
-
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        aiSelectorFocusedIndex = (aiSelectorFocusedIndex + 1) % aiSelectorTools.length;
-        updateAiSelectorFocus();
-        return;
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        aiSelectorFocusedIndex = (aiSelectorFocusedIndex - 1 + aiSelectorTools.length) % aiSelectorTools.length;
-        updateAiSelectorFocus();
-        return;
-      }
-      if (event.key === "Enter") {
-        event.preventDefault();
-        var tool = aiSelectorTools[aiSelectorFocusedIndex];
-        if (tool) { selectAiTool(tool.id); }
-        return;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        hideAiToolSelector();
-        return;
-      }
-    });
-
-    vscode.postMessage({ action: "refresh" });
-  </script>
+  <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
-  }
-
-  /**
-   * Sends text to a specific tmux pane.
-   * @param paneId The pane ID to send text to
-   * @param text The text to send
-   */
-  private async sendTextToPane(paneId: string, text: string): Promise<void> {
-    await this.tmuxSessionManager.sendTextToPane(paneId, text);
   }
 
   /**
@@ -1015,13 +691,17 @@ export class TerminalManagerDashboardProvider
     }
 
     const config = vscode.workspace.getConfiguration("opencodeTui");
-    const defaultTool = config.get<AiTool>("defaultAiTool");
+    const defaultToolName = config.get<AiTool>("defaultAiTool", "opencode");
+    const tools: AiToolConfig[] = resolveAiToolConfigs(
+      config.get("aiTools", []),
+    );
 
     const message: TmuxDashboardHostMessage = {
       type: "showAiToolSelector",
       sessionId,
       sessionName,
-      defaultTool,
+      defaultTool: defaultToolName,
+      tools,
     };
 
     await this.view.webview.postMessage(message);
@@ -1033,19 +713,27 @@ export class TerminalManagerDashboardProvider
    */
   private async handleLaunchAiTool(
     sessionId: string,
-    tool: AiTool,
+    toolName: string,
     savePreference: boolean,
   ): Promise<void> {
     if (savePreference) {
       const config = vscode.workspace.getConfiguration("opencodeTui");
       await config.update(
         "defaultAiTool",
-        tool,
+        toolName,
         vscode.ConfigurationTarget.Global,
       );
     }
 
-    const toolInfo = AI_TOOLS.find((t) => t.id === tool);
+    const config = vscode.workspace.getConfiguration("opencodeTui");
+    const tools: AiToolConfig[] = resolveAiToolConfigs(
+      config.get("aiTools", []),
+    );
+    const toolInfo = tools.find(
+      (t) =>
+        t.name === toolName ||
+        getToolDetectionPatterns(t).some((pattern) => pattern === toolName),
+    );
     if (!toolInfo) {
       return;
     }
@@ -1055,7 +743,7 @@ export class TerminalManagerDashboardProvider
       if (panes.length > 0) {
         await this.tmuxSessionManager.sendTextToPane(
           panes[0].paneId,
-          toolInfo.command,
+          getToolLaunchCommand(toolInfo),
         );
       }
     } catch (error) {
@@ -1095,11 +783,15 @@ export class TerminalManagerDashboardProvider
    */
   public dispose(): void {
     this.stopPolling();
+    this.disposeSubscriptions();
+    this.view = undefined;
+  }
+
+  private disposeSubscriptions(): void {
     for (const subscription of this.subscriptions) {
       subscription.dispose();
     }
     this.subscriptions.length = 0;
-    this.view = undefined;
   }
 
   private startPolling(): void {

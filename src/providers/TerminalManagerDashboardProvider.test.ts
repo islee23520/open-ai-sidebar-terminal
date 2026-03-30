@@ -110,6 +110,11 @@ describe("TerminalManagerDashboardProvider", () => {
       panes: {
         "repo-a": [],
       },
+      tools: [
+        { name: "opencode", label: "OpenCode", path: "", args: ["-c"] },
+        { name: "claude", label: "Claude", path: "", args: [] },
+        { name: "codex", label: "Codex", path: "", args: [] },
+      ],
     });
   });
 
@@ -162,6 +167,11 @@ describe("TerminalManagerDashboardProvider", () => {
       panes: {
         "repo-a": [],
       },
+      tools: [
+        { name: "opencode", label: "OpenCode", path: "", args: ["-c"] },
+        { name: "claude", label: "Claude", path: "", args: [] },
+        { name: "codex", label: "Codex", path: "", args: [] },
+      ],
     });
   });
 

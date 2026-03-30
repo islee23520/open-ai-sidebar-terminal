@@ -51,7 +51,8 @@ describe("ExtensionLifecycle", () => {
         }),
       );
 
-      expect(vscode.window.registerWebviewViewProvider).toHaveBeenCalledWith(
+      expect(vscode.window.registerWebviewViewProvider).toHaveBeenNthCalledWith(
+        2,
         "opencodeTui.terminalManager",
         expect.any(Object),
         expect.objectContaining({

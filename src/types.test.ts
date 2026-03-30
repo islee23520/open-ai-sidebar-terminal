@@ -5,6 +5,7 @@ import type {
   TmuxDashboardHostMessage,
   WebviewMessage,
 } from "./types";
+import { DEFAULT_AI_TOOLS } from "./types";
 
 describe("Types", () => {
   describe("WebviewMessage", () => {
@@ -132,6 +133,15 @@ describe("Types", () => {
       expect(switchNativeMessage.action).toBe("switchNativeShell");
       expect(activateMessage.action).toBe("activate");
       expect(activateMessage.sessionId).toBe("workspace-a-2");
+
+      const launchMessage: TmuxDashboardActionMessage = {
+        action: "launchAiTool",
+        sessionId: "workspace-a-2",
+        tool: "custom-tool",
+        savePreference: true,
+      };
+      expect(launchMessage.action).toBe("launchAiTool");
+      expect(launchMessage.tool).toBe("custom-tool");
     });
 
     it("should accept tmux dashboard host messages", () => {
@@ -151,6 +161,11 @@ describe("Types", () => {
       expect(message.type).toBe("updateTmuxSessions");
       expect(message.workspace).toBe("repo-a");
       expect(message.sessions[0]?.isActive).toBe(true);
+    });
+
+    it("uses default AI tools baseline", () => {
+      expect(DEFAULT_AI_TOOLS[0]?.name).toBe("opencode");
+      expect(DEFAULT_AI_TOOLS[0]?.args).toEqual(["-c"]);
     });
   });
 
