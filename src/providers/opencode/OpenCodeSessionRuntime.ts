@@ -102,6 +102,8 @@ export class OpenCodeSessionRuntime {
     }
 
     this.disposeListeners();
+    this.portManager.releaseTerminalPorts(this.activeInstanceId);
+    this.portManager.releaseTerminalPorts(instanceId);
     this.resetState(false);
     this.activeInstanceId = instanceId;
 
@@ -622,11 +624,13 @@ export class OpenCodeSessionRuntime {
         const records = this.instanceStore.getAll();
         for (const record of records) {
           if (record.runtime.tmuxSessionId === sessionId) {
+            this.portManager.releaseTerminalPorts(record.config.id);
             this.instanceStore.upsert({
               ...record,
               runtime: {
                 ...record.runtime,
                 tmuxSessionId: undefined,
+                port: undefined,
               },
             });
           }

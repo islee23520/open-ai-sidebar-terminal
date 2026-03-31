@@ -6,6 +6,7 @@ import { OutputCaptureManager } from "../services/OutputCaptureManager";
 import { InstanceStore } from "../services/InstanceStore";
 import { OutputChannelService } from "../services/OutputChannelService";
 import { TmuxSessionManager } from "../services/TmuxSessionManager";
+import { PortManager } from "../services/PortManager";
 import { TerminalManager } from "../terminals/TerminalManager";
 import { TerminalProvider } from "./TerminalProvider";
 
@@ -82,10 +83,12 @@ describe("TerminalProvider", () => {
     tmuxSessionManager?: TmuxSessionManager;
   }): TerminalProvider {
     const context = new vscode.ExtensionContext();
+    const portManager = new PortManager();
     return new TerminalProvider(
       context as any,
       terminalManager,
       captureManager,
+      portManager,
       options?.instanceStore,
       options?.tmuxSessionManager,
     );

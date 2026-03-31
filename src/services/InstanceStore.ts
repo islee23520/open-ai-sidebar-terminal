@@ -22,7 +22,7 @@ export interface InstanceConfig {
   enableHttpApi?: boolean;
 }
 
-export interface InstanceRuntime {
+interface InstanceRuntime {
   port?: number;
   pid?: number;
   terminalKey?: string;
@@ -30,7 +30,7 @@ export interface InstanceRuntime {
   lastSeenAt?: number;
 }
 
-export interface InstanceHealth {
+interface InstanceHealth {
   ok: boolean;
   baseUrl?: string;
   sessionTitle?: string;

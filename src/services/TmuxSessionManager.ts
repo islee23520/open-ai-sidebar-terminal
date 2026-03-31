@@ -37,7 +37,7 @@ export interface TmuxPane {
   windowId?: string;
 }
 
-export interface TmuxWindow {
+interface TmuxWindow {
   windowId: string;
   index: number;
   name: string;
@@ -51,7 +51,7 @@ export class TmuxUnavailableError extends Error {
   }
 }
 
-export interface EnsureTmuxSessionResult {
+interface EnsureTmuxSessionResult {
   action: "attached" | "created";
   session: TmuxSession;
 }
