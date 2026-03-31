@@ -30,18 +30,27 @@ interface TmuxDashboardPaneDto {
   title: string;
   isActive: boolean;
   currentCommand?: string;
+  windowId?: string;
+}
+
+interface TmuxDashboardWindowDto {
+  windowId: string;
+  index: number;
+  name: string;
+  isActive: boolean;
+  panes: TmuxDashboardPaneDto[];
 }
 
 interface DashboardPayload {
   sessions: TmuxDashboardSessionDto[];
   workspace: string;
-  panes: Record<string, TmuxDashboardPaneDto[]>;
+  windows?: Record<string, TmuxDashboardWindowDto[]>;
   showingAll?: boolean;
   tools?: AiToolConfig[];
 }
 
 const expandedSessions = new Set<string>();
-let lastPayload: DashboardPayload = { sessions: [], workspace: "", panes: {} };
+let lastPayload: DashboardPayload = { sessions: [], workspace: "" };
 
 let aiSelectorVisible = false;
 let aiSelectorFocusedIndex = 0;
@@ -82,7 +91,7 @@ function escapeHtml(value: string | number | undefined): string {
 }
 
 function render(payload: DashboardPayload): void {
-  lastPayload = payload || { sessions: [], workspace: "", panes: {} };
+  lastPayload = payload || { sessions: [], workspace: "" };
 
   const workspace = document.getElementById("workspace");
   const list = document.getElementById("session-list");
@@ -98,8 +107,7 @@ function render(payload: DashboardPayload): void {
     (payload.showingAll ? " (all)" : "");
 
   const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
-  const panes = payload.panes || {};
-
+  const windows = payload.windows || {};
   const activeOther = sessions.find(
     (s) => s.isActive && s.workspace !== payload.workspace,
   );
@@ -123,9 +131,28 @@ function render(payload: DashboardPayload): void {
     .map((s) => {
       const activeClass = s.isActive ? " active" : "";
       const statusText = s.isActive ? "Current" : "Available";
-      const sessionPanes = panes[s.id] || [];
-      const paneCount = sessionPanes.length;
       const isExpanded = expandedSessions.has(s.id);
+      const sessionWindows = windows[s.id] || [];
+      const windowCount = sessionWindows.length;
+      const totalPaneCount = sessionWindows.reduce(
+        (sum, w) => sum + w.panes.length,
+        0,
+      );
+
+      const windowListHtml = isExpanded
+        ? `<div class="window-list">${sessionWindows
+            .map((w) => {
+              const wActive = w.isActive ? " active" : "";
+              const panesHtml = w.panes
+                .map((p) => {
+                  const pActive = p.isActive ? " active" : "";
+                  return `<div class="pane-item${pActive}" data-session-id="${escapeHtml(s.id)}" data-pane-id="${escapeHtml(p.paneId)}"><span class="pane-name">${detectToolIcon(p.currentCommand)}${p.title || "Pane " + p.index}</span></div>`;
+                })
+                .join("");
+              return `<div class="window-card${wActive}"><div class="window-row"><span class="window-name">${escapeHtml(w.name)}</span><span class="window-index">${w.index}</span></div><div class="pane-list">${panesHtml}</div></div>`;
+            })
+            .join("")}</div>`
+        : "";
 
       return [
         `<div class="session-card${activeClass}" data-session-id="${escapeHtml(s.id)}">`,
@@ -141,20 +168,13 @@ function render(payload: DashboardPayload): void {
         `<div class="meta">workspace: ${escapeHtml(s.workspace)}</div>`,
         "</div>",
         `<div class="pane-header" data-session-id="${escapeHtml(s.id)}">`,
-        `<span>${isExpanded ? "▼" : "▶"} Panes (${paneCount})</span>`,
+        `<span>${isExpanded ? "▼" : "▶"} ${windowCount} window${windowCount !== 1 ? "s" : ""}, ${totalPaneCount} pane${totalPaneCount !== 1 ? "s" : ""}</span>`,
         "<div>",
         `<button class="pane-split-btn" data-action="splitH" data-session-id="${escapeHtml(s.id)}" title="Split Horizontal">↕</button>`,
         `<button class="pane-split-btn" data-action="splitV" data-session-id="${escapeHtml(s.id)}" title="Split Vertical">↔</button>`,
         "</div>",
         "</div>",
-        isExpanded
-          ? `<div class="pane-list">${sessionPanes
-              .map((p) => {
-                const activePaneClass = p.isActive ? " active" : "";
-                return `<div class="pane-item${activePaneClass}" data-session-id="${escapeHtml(s.id)}" data-pane-id="${escapeHtml(p.paneId)}"><span class="pane-name">${detectToolIcon(p.currentCommand)}Pane ${p.index}${p.title ? ": " + escapeHtml(p.title) : ""}</span></div>`;
-              })
-              .join("")}</div>`
-          : "",
+        windowListHtml,
         "</div>",
       ].join("");
     })
@@ -365,7 +385,7 @@ interface HostMessage {
   type: string;
   sessions?: TmuxDashboardSessionDto[];
   workspace?: string;
-  panes?: Record<string, TmuxDashboardPaneDto[]>;
+  windows?: Record<string, TmuxDashboardWindowDto[]>;
   showingAll?: boolean;
   tools?: AiToolConfig[];
   sessionId?: string;

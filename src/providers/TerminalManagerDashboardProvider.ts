@@ -6,6 +6,7 @@ import {
   TmuxDashboardHostMessage,
   TmuxDashboardPaneDto,
   TmuxDashboardSessionDto,
+  TmuxDashboardWindowDto,
   AiTool,
   AiToolConfig,
   resolveAiToolConfigs,
@@ -139,11 +140,24 @@ export class TerminalManagerDashboardProvider
       );
 
       const panesMap: Record<string, TmuxDashboardPaneDto[]> = {};
+      const windowsMap: Record<string, TmuxDashboardWindowDto[]> = {};
       for (const session of filtered) {
         try {
-          panesMap[session.id] = await this.listPanesForSession(session.id);
+          const [panes, windows] = await Promise.all([
+            this.listPanesForSession(session.id),
+            this.tmuxSessionManager.listWindows(session.id),
+          ]);
+          panesMap[session.id] = panes;
+          windowsMap[session.id] = windows.map((w) => ({
+            windowId: w.windowId,
+            index: w.index,
+            name: w.name,
+            isActive: w.isActive,
+            panes: panes.filter((p) => p.windowId === w.windowId),
+          }));
         } catch {
           panesMap[session.id] = [];
+          windowsMap[session.id] = [];
         }
       }
 
@@ -165,6 +179,7 @@ export class TerminalManagerDashboardProvider
         sessions: payload,
         workspace: workspaceName ?? "No workspace",
         panes: panesMap,
+        windows: windowsMap,
         showingAll: showAllFallback || undefined,
         tools,
       };
@@ -498,6 +513,41 @@ export class TerminalManagerDashboardProvider
       padding-left: 8px;
       border-left: 2px solid var(--vscode-panel-border);
       margin-left: 8px;
+    }
+    .window-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-left: 8px;
+      border-left: 2px solid var(--vscode-panel-border);
+      margin-left: 8px;
+    }
+    .window-card {
+      border-radius: 4px;
+      padding: 4px 6px;
+      background: var(--vscode-editor-background);
+    }
+    .window-card.active {
+      border-left: 2px solid var(--vscode-focusBorder);
+    }
+    .window-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 0;
+    }
+    .window-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--vscode-foreground);
+    }
+    .window-index {
+      font-size: 10px;
+      color: var(--vscode-descriptionForeground);
+      background: var(--vscode-badge-background);
+      padding: 0 4px;
+      border-radius: 3px;
     }
     .pane-item {
       display: flex;

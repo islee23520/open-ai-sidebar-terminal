@@ -41,12 +41,14 @@ describe("TerminalManagerDashboardProvider", () => {
   function createProvider(
     discoverSessions = vi.fn().mockResolvedValue([]),
     listPanes = vi.fn().mockResolvedValue([]),
+    listWindows = vi.fn().mockResolvedValue([]),
   ) {
     const context = new vscode.ExtensionContext();
     const onPaneChangedEvent = new vscode.EventEmitter<void>();
     const tmuxSessionManager = {
       discoverSessions,
       listPanes,
+      listWindows,
       onPaneChanged: onPaneChangedEvent.event,
     } as unknown as TmuxSessionManager;
 
@@ -110,6 +112,9 @@ describe("TerminalManagerDashboardProvider", () => {
       panes: {
         "repo-a": [],
       },
+      windows: {
+        "repo-a": [],
+      },
       tools: [
         { name: "opencode", label: "OpenCode", path: "", args: ["-c"] },
         { name: "claude", label: "Claude", path: "", args: [] },
@@ -140,6 +145,7 @@ describe("TerminalManagerDashboardProvider", () => {
     await messageHandler({ action: "activate", sessionId: "repo-a" });
     await messageHandler({ action: "create" });
     await messageHandler({ action: "switchNativeShell" });
+    await flushPromises();
 
     expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
       "opencodeTui.switchTmuxSession",
@@ -165,6 +171,9 @@ describe("TerminalManagerDashboardProvider", () => {
         },
       ],
       panes: {
+        "repo-a": [],
+      },
+      windows: {
         "repo-a": [],
       },
       tools: [

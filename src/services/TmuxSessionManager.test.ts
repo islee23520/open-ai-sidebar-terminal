@@ -388,13 +388,27 @@ describe("TmuxSessionManager", () => {
     it("lists panes for a session", async () => {
       mockExecSequence([
         {
-          stdout: "%0\t0\tbash\t1\n%1\t1\tvim\t0",
+          stdout: "%0\t0\tbash\t1\tbash\t@0\n%1\t1\tvim\t0\tvim\t@0",
         },
       ]);
       const panes = await manager.listPanes("test-session");
       expect(panes).toEqual([
-        { paneId: "%0", index: 0, title: "bash", isActive: true },
-        { paneId: "%1", index: 1, title: "vim", isActive: false },
+        {
+          paneId: "%0",
+          index: 0,
+          title: "bash",
+          isActive: true,
+          currentCommand: "bash",
+          windowId: "@0",
+        },
+        {
+          paneId: "%1",
+          index: 1,
+          title: "vim",
+          isActive: false,
+          currentCommand: "vim",
+          windowId: "@0",
+        },
       ]);
     });
 
@@ -421,14 +435,61 @@ describe("TmuxSessionManager", () => {
     it("lists pane DTOs for a session", async () => {
       mockExecSequence([
         {
-          stdout: "%0\t0\tbash\t0\n%2\t1\thtop\t1",
+          stdout: "%0\t0\tbash\t0\tbash\t@0\n%2\t1\thtop\t1\thtop\t@0",
         },
       ]);
       const dtos = await manager.listPaneDtos("test-session");
       expect(dtos).toEqual([
-        { paneId: "%0", index: 0, title: "bash", isActive: false },
-        { paneId: "%2", index: 1, title: "htop", isActive: true },
+        {
+          paneId: "%0",
+          index: 0,
+          title: "bash",
+          isActive: false,
+          currentCommand: "bash",
+          windowId: "@0",
+        },
+        {
+          paneId: "%2",
+          index: 1,
+          title: "htop",
+          isActive: true,
+          currentCommand: "htop",
+          windowId: "@0",
+        },
       ]);
+    });
+
+    it("lists windows for a session", async () => {
+      mockExecSequence([
+        {
+          stdout: "@0\t0\tmain\t1\n@1\t1\tlogs\t0",
+        },
+      ]);
+      const windows = await manager.listWindows("test-session");
+      expect(windows).toEqual([
+        { windowId: "@0", index: 0, name: "main", isActive: true },
+        { windowId: "@1", index: 1, name: "logs", isActive: false },
+      ]);
+    });
+
+    it("returns empty array when list-windows fails with no server error", async () => {
+      const err = Object.assign(new Error("no server running"), {
+        code: 1,
+        stderr: "failed to connect to server",
+      });
+      mockExecSequence([{ error: err }]);
+      const windows = await manager.listWindows("test-session");
+      expect(windows).toEqual([]);
+    });
+
+    it("throws TmuxUnavailableError for listWindows when tmux missing", async () => {
+      const err = Object.assign(new Error("spawn tmux ENOENT"), {
+        code: "ENOENT",
+      });
+      mockExecSequence([{ error: err }]);
+      await expect(manager.listWindows("test-session")).rejects.toBeInstanceOf(
+        TmuxUnavailableError,
+      );
     });
 
     it("sends text to a pane", async () => {

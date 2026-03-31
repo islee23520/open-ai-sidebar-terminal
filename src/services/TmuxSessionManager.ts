@@ -34,6 +34,14 @@ export interface TmuxPane {
   title: string;
   isActive: boolean;
   currentCommand?: string;
+  windowId?: string;
+}
+
+export interface TmuxWindow {
+  windowId: string;
+  index: number;
+  name: string;
+  isActive: boolean;
 }
 
 export class TmuxUnavailableError extends Error {
@@ -326,10 +334,45 @@ export class TmuxSessionManager {
     }
   }
 
+  public async listWindows(sessionId: string): Promise<TmuxWindow[]> {
+    try {
+      const format =
+        "#{window_id}\t#{window_index}\t#{window_name}\t#{window_active}";
+      const stdout = await this.runTmux([
+        "list-windows",
+        "-t",
+        sessionId,
+        "-F",
+        format,
+      ]);
+      return stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => {
+          const [windowId, index, name, active] = line.split("\t");
+          return {
+            windowId: windowId ?? "",
+            index: Number(index),
+            name: name ?? "",
+            isActive: active === "1",
+          };
+        });
+    } catch (error) {
+      if (this.isNoSessionsError(error)) {
+        return [];
+      }
+      if (this.isTmuxUnavailable(error)) {
+        throw new TmuxUnavailableError();
+      }
+      throw error;
+    }
+  }
+
   public async listPanes(sessionId: string): Promise<TmuxPane[]> {
     try {
       const format =
-        "#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_active}\t#{pane_current_command}";
+        "#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_active}\t#{pane_current_command}\t#{window_id}";
       const stdout = await this.runTmux([
         "list-panes",
         "-t",
@@ -342,7 +385,7 @@ export class TmuxSessionManager {
         .map((line) => line.trim())
         .filter((line) => line.length > 0)
         .map((line) => {
-          const [paneId, index, title, active, currentCommand] =
+          const [paneId, index, title, active, currentCommand, windowId] =
             line.split("\t");
           return {
             paneId: paneId ?? "",
@@ -352,6 +395,7 @@ export class TmuxSessionManager {
             ...(currentCommand !== undefined
               ? { currentCommand: currentCommand ?? "" }
               : {}),
+            ...(windowId !== undefined ? { windowId: windowId ?? "" } : {}),
           };
         });
     } catch (error) {
@@ -377,6 +421,7 @@ export class TmuxSessionManager {
       ...(p.currentCommand !== undefined
         ? { currentCommand: p.currentCommand }
         : {}),
+      ...(p.windowId !== undefined ? { windowId: p.windowId } : {}),
     }));
   }
 

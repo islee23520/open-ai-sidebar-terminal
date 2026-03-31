@@ -150,6 +150,15 @@ export type TmuxDashboardPaneDto = {
   title: string;
   isActive: boolean;
   currentCommand?: string;
+  windowId?: string;
+};
+
+export type TmuxDashboardWindowDto = {
+  windowId: string;
+  index: number;
+  name: string;
+  isActive: boolean;
+  panes: TmuxDashboardPaneDto[];
 };
 
 export type TmuxDashboardHostMessage =
@@ -157,6 +166,7 @@ export type TmuxDashboardHostMessage =
       type: "updateTmuxSessions";
       sessions: TmuxDashboardSessionDto[];
       workspace: string;
+      windows?: Record<string, TmuxDashboardWindowDto[]>;
       panes?: Record<string, TmuxDashboardPaneDto[]>;
       showingAll?: boolean;
       tools?: AiToolConfig[];
