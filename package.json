@@ -1,6 +1,6 @@
 {
   "name": "opencode-sidebar-tui",
-  "displayName": "OpenCode Sidebar TUI",
+  "displayName": "Open AI Sidebar Terminal",
   "description": "Automatically render OpenCode TUI in VS Code sidebar with full terminal support",
   "version": "1.5.0",
   "publisher": "islee23520",
@@ -33,7 +33,7 @@
       "activitybar": [
         {
           "id": "opencodeTuiContainer",
-          "title": "OpenCode",
+          "title": "Open AI Sidebar Terminal",
           "icon": "resources/opencode-activity-bar.svg"
         }
       ]
@@ -51,10 +51,10 @@
       "explorer": [
         {
           "id": "opencodeTui.terminalManager",
-          "name": "OpenCode Sidebar TUI",
+          "name": "Open AI Sidebar Terminal",
           "type": "webview",
           "icon": "$(server)",
-          "contextualTitle": "OpenCode Sidebar TUI"
+          "contextualTitle": "Open AI Sidebar Terminal"
         }
       ]
     },
