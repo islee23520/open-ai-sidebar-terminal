@@ -40,11 +40,9 @@ function scheduleRefresh() {
 }
 
 function copySelectionToClipboard(selection: string): void {
-  navigator.clipboard.writeText(selection).catch(() => {
-    vscode.postMessage({
-      type: "setClipboard",
-      text: selection,
-    });
+  vscode.postMessage({
+    type: "setClipboard",
+    text: selection,
   });
 }
 
@@ -301,6 +299,44 @@ function initTerminal(): void {
     const selection = terminal?.getSelection();
     if (selection && selection.length > 0) {
       copySelectionToClipboard(selection);
+    }
+  });
+
+  // Click-to-switch-pane: forward bare left-clicks as SGR mouse events so
+  // tmux can handle pane focus, even though we stripped app mouse-reporting.
+  let clickOrigin: { x: number; y: number } | null = null;
+
+  container.addEventListener("mousedown", (e) => {
+    if (e.button === 0 && !e.shiftKey) {
+      clickOrigin = { x: e.clientX, y: e.clientY };
+    }
+  });
+
+  container.addEventListener("mouseup", (e) => {
+    if (e.button !== 0 || !clickOrigin || !terminal) {
+      clickOrigin = null;
+      return;
+    }
+    const dx = e.clientX - clickOrigin.x;
+    const dy = e.clientY - clickOrigin.y;
+    clickOrigin = null;
+
+    // Only send click (not drag) to PTY so tmux can switch pane
+    if (Math.abs(dx) < 5 && Math.abs(dy) < 5) {
+      const rect = container.getBoundingClientRect();
+      const col = Math.max(
+        1,
+        Math.floor(((e.clientX - rect.left) / container.offsetWidth) * terminal.cols) + 1,
+      );
+      const row = Math.max(
+        1,
+        Math.floor(((e.clientY - rect.top) / container.offsetHeight) * terminal.rows) + 1,
+      );
+      // SGR mouse press + release
+      vscode.postMessage({
+        type: "terminalInput",
+        data: `\x1b[<0;${col};${row}M\x1b[<0;${col};${row}m`,
+      });
     }
   });
 
@@ -664,7 +700,14 @@ window.addEventListener("message", (event) => {
   switch (message.type) {
     case "terminalOutput":
       if (terminal) {
-        terminal.write(message.data);
+        // Strip application-level mouse reporting enable sequences so xterm.js
+        // stays in selection mode regardless of what Claude/tools request.
+        // Only strip enables (h suffix); disable sequences (l suffix) pass through.
+        const filtered = message.data.replace(
+          /\x1b\[\?(?:1000|1002|1003|1004|1005|1006|1007|1015)h/g,
+          "",
+        );
+        terminal.write(filtered);
       }
       break;
     case "terminalExited":

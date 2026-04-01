@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "synapse-a2a": {
+      "source": "s-hiraoku/synapse-a2a",
+      "sourceType": "github",
+      "computedHash": "601031542535135ea449a196030175d48bc073826dfb35b15a66de712d181a44"
+    }
+  }
+}

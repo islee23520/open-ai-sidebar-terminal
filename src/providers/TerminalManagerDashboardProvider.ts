@@ -237,23 +237,7 @@ export class TerminalManagerDashboardProvider
           )) as string | undefined;
           await this.postSessionsToWebview();
           if (newSessionId) {
-            const config = vscode.workspace.getConfiguration("opencodeTui");
-            const defaultToolName = config.get<AiTool>(
-              "defaultAiTool",
-              "opencode",
-            );
-            const tools: AiToolConfig[] = resolveAiToolConfigs(
-              config.get("aiTools", []),
-            );
-            const defaultTool = tools.find((t) => t.name === defaultToolName);
-            if (defaultTool) {
-              await this.tmuxSessionManager.sendTextToPane(
-                newSessionId,
-                getToolLaunchCommand(defaultTool),
-              );
-            } else {
-              await this.showAiToolSelector(newSessionId, newSessionId);
-            }
+            await this.showAiToolSelector(newSessionId, newSessionId);
           }
         }
         return;

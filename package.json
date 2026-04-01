@@ -66,7 +66,7 @@
       },
       {
         "command": "opencodeTui.sendToTerminal",
-        "title": "Send to OpenCode Terminal",
+        "title": "Send to Active Terminal",
         "category": "OpenCode TUI"
       },
       {
@@ -183,6 +183,48 @@
         "title": "Kill Pane",
         "category": "OpenCode TUI",
         "icon": "$(trash)"
+      },
+      {
+        "command": "opencodeTui.tmuxNextWindow",
+        "title": "Next Window",
+        "category": "OpenCode TUI",
+        "icon": "$(chevron-right)"
+      },
+      {
+        "command": "opencodeTui.tmuxPrevWindow",
+        "title": "Previous Window",
+        "category": "OpenCode TUI",
+        "icon": "$(chevron-left)"
+      },
+      {
+        "command": "opencodeTui.tmuxCreateWindow",
+        "title": "Create Window",
+        "category": "OpenCode TUI",
+        "icon": "$(add)"
+      },
+      {
+        "command": "opencodeTui.tmuxKillWindow",
+        "title": "Kill Window",
+        "category": "OpenCode TUI",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "opencodeTui.tmuxSelectWindow",
+        "title": "Select Window",
+        "category": "OpenCode TUI",
+        "icon": "$(list-selection)"
+      },
+      {
+        "command": "opencodeTui.tmuxKillSession",
+        "title": "Kill Session",
+        "category": "OpenCode TUI",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "opencodeTui.tmuxRefresh",
+        "title": "Refresh Terminal Manager",
+        "category": "OpenCode TUI",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
@@ -191,6 +233,31 @@
           "command": "opencodeTui.restart",
           "when": "view == opencodeTui",
           "group": "navigation@1"
+        },
+        {
+          "command": "opencodeTui.tmuxRefresh",
+          "when": "view == opencodeTui.terminalManager",
+          "group": "navigation@1"
+        },
+        {
+          "command": "opencodeTui.tmuxCreateWindow",
+          "when": "view == opencodeTui.terminalManager",
+          "group": "navigation@2"
+        },
+        {
+          "command": "opencodeTui.tmuxNextWindow",
+          "when": "view == opencodeTui.terminalManager",
+          "group": "navigation@3"
+        },
+        {
+          "command": "opencodeTui.tmuxPrevWindow",
+          "when": "view == opencodeTui.terminalManager",
+          "group": "navigation@4"
+        },
+        {
+          "command": "opencodeTui.createTmuxSession",
+          "when": "view == opencodeTui.terminalManager",
+          "group": "navigation@5"
         }
       ],
       "explorer/context": [

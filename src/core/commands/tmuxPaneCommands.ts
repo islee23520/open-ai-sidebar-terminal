@@ -375,6 +375,139 @@ export function registerTmuxPaneCommands(
     },
   );
 
+  const tmuxNextWindowCommand = vscode.commands.registerCommand(
+    "opencodeTui.tmuxNextWindow",
+    async () => {
+      if (!deps.tmuxManager) return;
+      const sessionId = deps.resolveActiveTmuxSessionId();
+      if (!sessionId) return;
+      try {
+        await deps.tmuxManager.nextWindow(sessionId);
+      } catch {
+        vscode.window.showErrorMessage("Failed to switch to next window");
+      }
+    },
+  );
+
+  const tmuxPrevWindowCommand = vscode.commands.registerCommand(
+    "opencodeTui.tmuxPrevWindow",
+    async () => {
+      if (!deps.tmuxManager) return;
+      const sessionId = deps.resolveActiveTmuxSessionId();
+      if (!sessionId) return;
+      try {
+        await deps.tmuxManager.prevWindow(sessionId);
+      } catch {
+        vscode.window.showErrorMessage("Failed to switch to previous window");
+      }
+    },
+  );
+
+  const tmuxCreateWindowCommand = vscode.commands.registerCommand(
+    "opencodeTui.tmuxCreateWindow",
+    async () => {
+      if (!deps.tmuxManager) return;
+      const sessionId = deps.resolveActiveTmuxSessionId();
+      if (!sessionId) return;
+      try {
+        await deps.tmuxManager.createWindow(sessionId);
+      } catch {
+        vscode.window.showErrorMessage("Failed to create window");
+      }
+    },
+  );
+
+  const tmuxKillWindowCommand = vscode.commands.registerCommand(
+    "opencodeTui.tmuxKillWindow",
+    async (item?: { windowId: string }) => {
+      if (!deps.tmuxManager) return;
+      const sessionId = deps.resolveActiveTmuxSessionId();
+      if (!sessionId) return;
+      let windowId = item?.windowId;
+      if (!windowId) {
+        const windows = await deps.tmuxManager.listWindows(sessionId);
+        const picked = await vscode.window.showQuickPick(
+          windows.map((w) => ({
+            label: `${w.isActive ? "$(check) " : ""}Window ${w.index}: ${w.name}`,
+            description: w.windowId,
+            windowId: w.windowId,
+          })),
+          { placeHolder: "Select window to kill" },
+        );
+        if (!picked) return;
+        windowId = picked.windowId;
+      }
+      const confirm = await vscode.window.showWarningMessage(
+        `Kill window ${windowId}?`,
+        { modal: true },
+        "Kill",
+      );
+      if (confirm !== "Kill") return;
+      try {
+        await deps.tmuxManager.killWindow(windowId);
+      } catch {
+        vscode.window.showErrorMessage("Failed to kill window");
+      }
+    },
+  );
+
+  const tmuxSelectWindowCommand = vscode.commands.registerCommand(
+    "opencodeTui.tmuxSelectWindow",
+    async (item?: { windowId: string }) => {
+      if (!deps.tmuxManager) return;
+      const sessionId = deps.resolveActiveTmuxSessionId();
+      if (!sessionId) return;
+      let windowId = item?.windowId;
+      if (!windowId) {
+        const windows = await deps.tmuxManager.listWindows(sessionId);
+        const picked = await vscode.window.showQuickPick(
+          windows.map((w) => ({
+            label: `${w.isActive ? "$(check) " : ""}Window ${w.index}: ${w.name}`,
+            description: w.windowId,
+            windowId: w.windowId,
+          })),
+          { placeHolder: "Select window to switch to" },
+        );
+        if (!picked) return;
+        windowId = picked.windowId;
+      }
+      try {
+        await deps.tmuxManager.selectWindow(windowId);
+      } catch {
+        vscode.window.showErrorMessage("Failed to select window");
+      }
+    },
+  );
+
+  const tmuxKillSessionCommand = vscode.commands.registerCommand(
+    "opencodeTui.tmuxKillSession",
+    async (item?: { sessionId: string }) => {
+      if (!deps.tmuxManager) return;
+      const sessionId = item?.sessionId ?? deps.resolveActiveTmuxSessionId();
+      if (!sessionId) return;
+      const confirm = await vscode.window.showWarningMessage(
+        `Kill tmux session "${sessionId}"?`,
+        { modal: true },
+        "Kill",
+      );
+      if (confirm !== "Kill") return;
+      try {
+        await deps.tmuxManager.killSession(sessionId);
+      } catch {
+        vscode.window.showErrorMessage("Failed to kill session");
+      }
+    },
+  );
+
+  const tmuxRefreshCommand = vscode.commands.registerCommand(
+    "opencodeTui.tmuxRefresh",
+    async () => {
+      await vscode.commands.executeCommand(
+        "opencodeTui.terminalManager.focus",
+      );
+    },
+  );
+
   return [
     tmuxSwitchPaneCommand,
     tmuxSplitPaneHCommand,
@@ -384,5 +517,12 @@ export function registerTmuxPaneCommands(
     tmuxResizePaneCommand,
     tmuxSwapPaneCommand,
     tmuxKillPaneCommand,
+    tmuxNextWindowCommand,
+    tmuxPrevWindowCommand,
+    tmuxCreateWindowCommand,
+    tmuxKillWindowCommand,
+    tmuxSelectWindowCommand,
+    tmuxKillSessionCommand,
+    tmuxRefreshCommand,
   ];
 }
