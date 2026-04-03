@@ -7,7 +7,7 @@
       content="default-src 'none'; style-src {{CSP_SOURCE}} 'unsafe-inline'; script-src 'nonce-{{NONCE}}';"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OpenCode TUI</title>
+    <title>Open AI Terminal</title>
     <link rel="stylesheet" href="{{CSS_URI}}" />
   </head>
   <body>
@@ -17,7 +17,22 @@
       style="font-family: {{FONT_FAMILY}}"
       >ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&amp;*()_+-=[]{}|;':&quot;,./&lt;&gt;?`~</span
     >
-    <div id="session-indicator" class="session-indicator hidden"></div>
+    <div id="tmux-toolbar" class="tmux-toolbar hidden">
+      <button type="button" id="btn-prev-session" class="tmux-btn">
+        &#9668;&#9668;
+      </button>
+      <button type="button" id="btn-prev-window" class="tmux-btn">
+        &#9668;
+      </button>
+      <span id="tmux-session-label" class="tmux-session-label"></span>
+      <button type="button" id="btn-new-window" class="tmux-btn">+</button>
+      <button type="button" id="btn-next-window" class="tmux-btn">
+        &#9658;
+      </button>
+      <button type="button" id="btn-next-session" class="tmux-btn">
+        &#9658;&#9658;
+      </button>
+    </div>
     <div
       id="terminal-container"
       data-font-size="{{FONT_SIZE}}"
@@ -26,6 +41,21 @@
       data-cursor-style="{{CURSOR_STYLE}}"
       data-scrollback="{{SCROLLBACK}}"
     ></div>
+    <div id="ai-selector" class="ai-selector-backdrop">
+      <div class="ai-selector-card">
+        <div class="ai-selector-title">Launch AI Tool</div>
+        <div class="ai-selector-subtitle" id="ai-selector-session"></div>
+        <div class="ai-selector-options" id="ai-tool-options"></div>
+        <label class="ai-selector-save">
+          <input type="checkbox" id="ai-save-default" />
+          <span>Save as default</span>
+        </label>
+        <div class="ai-selector-hint">
+          ↑↓ Navigate · Enter Select · Esc Dismiss
+        </div>
+      </div>
+    </div>
+
     <script nonce="{{NONCE}}" src="{{SCRIPT_URI}}"></script>
   </body>
 </html>

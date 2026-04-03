@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import * as AiSelector from "./ai-tool-selector";
 import {
   WebviewMessage,
   HostMessage,
@@ -53,7 +54,6 @@ function copySelectionToClipboard(selection: string): void {
     text: selection,
   });
 }
-
 
 async function handlePasteWithImageSupport(): Promise<void> {
   try {
@@ -139,6 +139,13 @@ function initTerminal(): void {
   });
 
   terminal.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
+    // Intercept keyboard for AI tool selector
+    if (AiSelector.isVisible()) {
+      event.preventDefault();
+      event.stopPropagation();
+      return false;
+    }
+
     const isCtrlC =
       event.ctrlKey &&
       !event.shiftKey &&
@@ -422,6 +429,9 @@ function initTerminal(): void {
   // Setup drag and drop for file references
   setupDragAndDrop(vscode);
 
+  // Setup tmux toolbar buttons
+  setupTmuxToolbar(vscode);
+
   container.addEventListener("dragover", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -627,15 +637,71 @@ function initTerminal(): void {
 
       if (files.length > 0) {
         console.log(`[WEBVIEW] Sending ${files.length} files:`, files);
+
+        let dropCell: { col: number; row: number } | undefined;
+        if (e.shiftKey && terminal) {
+          const screenEl = terminal.element?.querySelector(".xterm-screen");
+          if (screenEl) {
+            const rect = screenEl.getBoundingClientRect();
+            const relX = e.clientX - rect.left;
+            const relY = e.clientY - rect.top;
+            if (
+              relX >= 0 &&
+              relY >= 0 &&
+              relX < rect.width &&
+              relY < rect.height &&
+              terminal.cols > 0 &&
+              terminal.rows > 0
+            ) {
+              dropCell = {
+                col: Math.floor((relX / rect.width) * terminal.cols),
+                row: Math.floor((relY / rect.height) * terminal.rows),
+              };
+              console.log(`[WEBVIEW] dropCell computed:`, dropCell);
+            } else {
+              console.log(
+                `[WEBVIEW] dropCell out of bounds: relX=${relX} relY=${relY} rect=${JSON.stringify(rect)}`,
+              );
+            }
+          } else {
+            console.log(`[WEBVIEW] .xterm-screen element not found`);
+          }
+        }
+
         vscode.postMessage({
           type: "filesDropped",
           files: files,
           shiftKey: e.shiftKey,
+          dropCell,
         });
       } else {
         console.log("[WEBVIEW] No files collected from drop event");
       }
     }
+  });
+}
+
+function setupTmuxToolbar(vscode: any): void {
+  const prevSession = document.getElementById("btn-prev-session");
+  const nextSession = document.getElementById("btn-next-session");
+  const prevWindow = document.getElementById("btn-prev-window");
+  const nextWindow = document.getElementById("btn-next-window");
+  const newWindow = document.getElementById("btn-new-window");
+
+  prevSession?.addEventListener("click", () => {
+    vscode.postMessage({ type: "navigateTmuxSession", direction: "prev" });
+  });
+  nextSession?.addEventListener("click", () => {
+    vscode.postMessage({ type: "navigateTmuxSession", direction: "next" });
+  });
+  prevWindow?.addEventListener("click", () => {
+    vscode.postMessage({ type: "navigateTmuxWindow", direction: "prev" });
+  });
+  nextWindow?.addEventListener("click", () => {
+    vscode.postMessage({ type: "navigateTmuxWindow", direction: "next" });
+  });
+  newWindow?.addEventListener("click", () => {
+    vscode.postMessage({ type: "createTmuxWindow" });
   });
 }
 
@@ -725,16 +791,61 @@ window.addEventListener("message", (event) => {
       }
       break;
     case "activeSession": {
-      const indicator = document.getElementById("session-indicator");
-      if (!indicator) break;
+      const toolbar = document.getElementById("tmux-toolbar");
+      const label = document.getElementById("tmux-session-label");
       if ("sessionName" in message && message.sessionName) {
-        indicator.textContent = message.sessionName;
-        indicator.classList.remove("hidden");
+        if (toolbar) {
+          toolbar.classList.remove("hidden");
+        }
+        if (label) {
+          label.textContent = message.sessionName;
+        }
       } else {
-        indicator.classList.add("hidden");
+        if (toolbar) toolbar.classList.add("hidden");
       }
       break;
     }
+    case "showAiToolSelector":
+      AiSelector.show(
+        message.sessionId,
+        message.sessionName,
+        message.defaultTool,
+        message.tools,
+      );
+      break;
+  }
+});
+
+// AI Tool Selector: keyboard navigation
+const aiCallbacks = {
+  postMessage: (msg: unknown) => {
+    const m = msg as Record<string, unknown>;
+    // Shared module uses "action", terminal webview uses "type"
+    if (m && m.action === "launchAiTool") {
+      vscode.postMessage({
+        type: "launchAiTool",
+        sessionId: String(m.sessionId ?? ""),
+        tool: String(m.tool ?? ""),
+        savePreference: Boolean(m.savePreference),
+      });
+    }
+  },
+};
+
+document.addEventListener("keydown", (event) => {
+  if (AiSelector.isVisible()) {
+    AiSelector.handleKeydown(event, aiCallbacks);
+  }
+});
+
+// AI Tool Selector: click handling
+document.addEventListener("click", (event) => {
+  if (!AiSelector.isVisible()) return;
+  const target = event
+    .composedPath()
+    .find((el): el is Element => el instanceof Element);
+  if (target) {
+    AiSelector.handleClick(target, aiCallbacks);
   }
 });
 
