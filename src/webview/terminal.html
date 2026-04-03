@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src {{CSP_SOURCE}} 'unsafe-inline'; script-src 'nonce-{{NONCE}}';"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Open AI Terminal</title>
+    <link rel="stylesheet" href="{{CSS_URI}}" />
+  </head>
+  <body>
+    <span
+      class="font-preload"
+      aria-hidden="true"
+      style="font-family: {{FONT_FAMILY}}"
+      >ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&amp;*()_+-=[]{}|;':&quot;,./&lt;&gt;?`~</span
+    >
+    <div id="tmux-toolbar" class="tmux-toolbar hidden">
+      <button type="button" id="btn-prev-session" class="tmux-btn">
+        &#9668;&#9668;
+      </button>
+      <button type="button" id="btn-prev-window" class="tmux-btn">
+        &#9668;
+      </button>
+      <span id="tmux-session-label" class="tmux-session-label"></span>
+      <button type="button" id="btn-new-window" class="tmux-btn">+</button>
+      <button type="button" id="btn-next-window" class="tmux-btn">
+        &#9658;
+      </button>
+      <button type="button" id="btn-next-session" class="tmux-btn">
+        &#9658;&#9658;
+      </button>
+    </div>
+    <div
+      id="terminal-container"
+      data-font-size="{{FONT_SIZE}}"
+      data-font-family="{{FONT_FAMILY}}"
+      data-cursor-blink="{{CURSOR_BLINK}}"
+      data-cursor-style="{{CURSOR_STYLE}}"
+      data-scrollback="{{SCROLLBACK}}"
+    >
+      <div id="pane-controls" class="pane-controls hidden">
+        <button
+          type="button"
+          id="btn-split-v"
+          class="pane-btn"
+          aria-label="Split pane vertically"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 14 14"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <rect
+              x="1"
+              y="1"
+              width="12"
+              height="5"
+              rx="1"
+              stroke="currentColor"
+              stroke-width="1.2"
+            />
+            <rect
+              x="1"
+              y="8"
+              width="12"
+              height="5"
+              rx="1"
+              stroke="currentColor"
+              stroke-width="1.2"
+            />
+          </svg>
+        </button>
+        <button
+          type="button"
+          id="btn-split-h"
+          class="pane-btn"
+          aria-label="Split pane horizontally"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 14 14"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <rect
+              x="1"
+              y="1"
+              width="5"
+              height="12"
+              rx="1"
+              stroke="currentColor"
+              stroke-width="1.2"
+            />
+            <rect
+              x="8"
+              y="1"
+              width="5"
+              height="12"
+              rx="1"
+              stroke="currentColor"
+              stroke-width="1.2"
+            />
+          </svg>
+        </button>
+        <button
+          type="button"
+          id="btn-kill-pane"
+          class="pane-btn pane-btn--danger"
+          aria-label="Close pane"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 14 14"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <line
+              x1="3"
+              y1="3"
+              x2="11"
+              y2="11"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+            <line
+              x1="11"
+              y1="3"
+              x2="3"
+              y2="11"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div id="ai-selector" class="ai-selector-backdrop">
+      <div class="ai-selector-card">
+        <div class="ai-selector-title">Launch AI Tool</div>
+        <div class="ai-selector-subtitle" id="ai-selector-session"></div>
+        <div class="ai-selector-options" id="ai-tool-options"></div>
+        <label class="ai-selector-save">
+          <input type="checkbox" id="ai-save-default" />
+          <span>Save as default</span>
+        </label>
+        <div class="ai-selector-hint">
+          ↑↓ Navigate · Enter Select · Esc Dismiss
+        </div>
+      </div>
+    </div>
+
+    <script nonce="{{NONCE}}" src="{{SCRIPT_URI}}"></script>
+  </body>
+</html>

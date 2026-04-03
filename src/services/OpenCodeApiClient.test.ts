@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   OpenCodeApiClient,
   type HealthCheckResponse,
-  type ApiError,
 } from "./OpenCodeApiClient";
 
 // Mock global fetch
@@ -204,7 +203,10 @@ describe("OpenCodeApiClient", () => {
         await client.appendPrompt("test");
         expect.fail("Should have thrown");
       } catch (error) {
-        const apiError = error as ApiError;
+        const apiError = error as Error & {
+          statusCode?: number;
+          code?: string;
+        };
         expect(apiError.statusCode).toBe(404);
       }
     });
@@ -241,7 +243,10 @@ describe("OpenCodeApiClient", () => {
         await shortClient.appendPrompt("test");
         expect.fail("Should have thrown");
       } catch (error) {
-        const apiError = error as ApiError;
+        const apiError = error as Error & {
+          statusCode?: number;
+          code?: string;
+        };
         expect(apiError.code).toBe("MAX_RETRIES_EXHAUSTED");
       }
     });

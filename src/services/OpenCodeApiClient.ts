@@ -15,7 +15,7 @@ export interface AppendPromptRequest {
   prompt: string;
 }
 
-export interface ApiError extends Error {
+interface ApiError extends Error {
   code?: string;
   statusCode?: number;
 }

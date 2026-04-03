@@ -21,6 +21,13 @@ export class TerminalManager {
   }>();
   private readonly _onExit = new vscode.EventEmitter<string>();
 
+  /**
+   * Generation counter per terminal id. Incremented on kill so that stale
+   * `ptyProcess.onExit` callbacks (which cannot be removed) are silently
+   * ignored when a new terminal is later created with the same id.
+   */
+  private exitGenerations: Map<string, number> = new Map();
+
   readonly onData = this._onData.event;
   readonly onExit = this._onExit.event;
 
@@ -35,6 +42,7 @@ export class TerminalManager {
     cols?: number,
     rows?: number,
     instanceId?: string,
+    cwd?: string,
   ): Terminal {
     if (this.terminals.has(id)) {
       this.killTerminal(id);
@@ -60,17 +68,31 @@ export class TerminalManager {
       name: "xterm-256color",
       cols: cols || 80,
       rows: rows || 24,
-      cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir(),
+      cwd:
+        cwd ||
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ||
+        os.homedir(),
       env: mergedEnv,
       handleFlowControl: false,
     });
 
+    const generation = this.exitGenerations.get(id) ?? 0;
+
     ptyProcess.onData((data) => {
+      // Ignore stale data from killed processes (same guard as onExit).
+      // When a terminal is killed and recreated with the same id, the old
+      // pty process may still emit a few data events before fully exiting.
+      if ((this.exitGenerations.get(id) ?? 0) !== generation) {
+        return;
+      }
       onDataEmitter.fire({ id, data });
       this._onData.fire({ id, data });
     });
 
     ptyProcess.onExit(() => {
+      if ((this.exitGenerations.get(id) ?? 0) !== generation) {
+        return;
+      }
       onExitEmitter.fire(id);
       this._onExit.fire(id);
       this.terminals.delete(id);
@@ -130,6 +152,7 @@ export class TerminalManager {
   killTerminal(id: string): void {
     const terminal = this.terminals.get(id);
     if (terminal) {
+      this.exitGenerations.set(id, (this.exitGenerations.get(id) ?? 0) + 1);
       terminal.process.kill();
       terminal.onData.dispose();
       terminal.onExit.dispose();
@@ -159,6 +182,7 @@ export class TerminalManager {
       this.killTerminal(id);
     }
     this.instanceToTerminal.clear();
+    this.exitGenerations.clear();
     this._onData.dispose();
     this._onExit.dispose();
   }

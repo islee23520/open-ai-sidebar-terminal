@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import * as AiSelector from "./ai-tool-selector";
 import {
   WebviewMessage,
   HostMessage,
@@ -26,6 +27,14 @@ let lastPasteTime = 0;
 let needsRefresh = false;
 let animationFrameId: number | null = null;
 
+const MOUSE_ENABLE = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
+const MOUSE_DISABLE = "\x1b[?1000l\x1b[?1002l\x1b[?1006l";
+
+function setMouseTracking(enabled: boolean): void {
+  if (!terminal) return;
+  terminal.write(enabled ? MOUSE_ENABLE : MOUSE_DISABLE);
+}
+
 function scheduleRefresh() {
   needsRefresh = true;
   if (animationFrameId !== null) return;
@@ -40,11 +49,9 @@ function scheduleRefresh() {
 }
 
 function copySelectionToClipboard(selection: string): void {
-  navigator.clipboard.writeText(selection).catch(() => {
-    vscode.postMessage({
-      type: "setClipboard",
-      text: selection,
-    });
+  vscode.postMessage({
+    type: "setClipboard",
+    text: selection,
   });
 }
 
@@ -88,33 +95,57 @@ async function handlePasteWithImageSupport(): Promise<void> {
   vscode.postMessage({ type: "triggerPaste" });
 }
 
+function readTerminalConfig(element: HTMLElement) {
+  return {
+    fontSize: parseInt(element.dataset.fontSize || "14", 10),
+    fontFamily:
+      element.dataset.fontFamily ||
+      "'JetBrainsMono Nerd Font', 'FiraCode Nerd Font', 'CascadiaCode NF', Menlo, monospace",
+    cursorBlink: element.dataset.cursorBlink !== "false",
+    cursorStyle: (element.dataset.cursorStyle || "block") as
+      | "block"
+      | "underline"
+      | "bar",
+    scrollback: parseInt(element.dataset.scrollback || "10000", 10),
+  };
+}
+
 function initTerminal(): void {
   const container = document.getElementById("terminal-container");
   if (!container) return;
 
+  const config = readTerminalConfig(container);
+
   container.addEventListener("contextmenu", (event) => {
     event.preventDefault();
-  });
-
-  container.addEventListener("mousedown", (event) => {
-    if (event.button === 2) {
-      event.preventDefault();
-      event.stopPropagation();
+    const selection = terminal?.getSelection();
+    if (selection && selection.length > 0) {
+      copySelectionToClipboard(selection);
+    } else {
+      vscode.postMessage({ type: "triggerPaste" });
     }
   });
 
   terminal = new Terminal({
-    cursorBlink: true,
-    fontSize: 14,
-    fontFamily: "monospace",
+    cursorBlink: config.cursorBlink,
+    cursorStyle: config.cursorStyle,
+    fontSize: config.fontSize,
+    fontFamily: config.fontFamily,
     theme: {
       background: "#1e1e1e",
       foreground: "#cccccc",
     },
-    scrollback: 10000,
+    scrollback: config.scrollback,
   });
 
   terminal.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
+    // Intercept keyboard for AI tool selector
+    if (AiSelector.isVisible()) {
+      event.preventDefault();
+      event.stopPropagation();
+      return false;
+    }
+
     const isCtrlC =
       event.ctrlKey &&
       !event.shiftKey &&
@@ -277,6 +308,8 @@ function initTerminal(): void {
   });
 
   terminal.open(container);
+  terminal.focus();
+  setMouseTracking(true);
 
   try {
     const webglAddon = new WebglAddon();
@@ -395,6 +428,12 @@ function initTerminal(): void {
 
   // Setup drag and drop for file references
   setupDragAndDrop(vscode);
+
+  // Setup tmux toolbar buttons
+  setupTmuxToolbar(vscode);
+
+  // Setup pane control overlay buttons
+  setupPaneControls(vscode);
 
   container.addEventListener("dragover", (e) => {
     e.preventDefault();
@@ -601,15 +640,87 @@ function initTerminal(): void {
 
       if (files.length > 0) {
         console.log(`[WEBVIEW] Sending ${files.length} files:`, files);
+
+        let dropCell: { col: number; row: number } | undefined;
+        if (e.shiftKey && terminal) {
+          const screenEl = terminal.element?.querySelector(".xterm-screen");
+          if (screenEl) {
+            const rect = screenEl.getBoundingClientRect();
+            const relX = e.clientX - rect.left;
+            const relY = e.clientY - rect.top;
+            if (
+              relX >= 0 &&
+              relY >= 0 &&
+              relX < rect.width &&
+              relY < rect.height &&
+              terminal.cols > 0 &&
+              terminal.rows > 0
+            ) {
+              dropCell = {
+                col: Math.floor((relX / rect.width) * terminal.cols),
+                row: Math.floor((relY / rect.height) * terminal.rows),
+              };
+              console.log(`[WEBVIEW] dropCell computed:`, dropCell);
+            } else {
+              console.log(
+                `[WEBVIEW] dropCell out of bounds: relX=${relX} relY=${relY} rect=${JSON.stringify(rect)}`,
+              );
+            }
+          } else {
+            console.log(`[WEBVIEW] .xterm-screen element not found`);
+          }
+        }
+
         vscode.postMessage({
           type: "filesDropped",
           files: files,
           shiftKey: e.shiftKey,
+          dropCell,
         });
       } else {
         console.log("[WEBVIEW] No files collected from drop event");
       }
     }
+  });
+}
+
+function setupTmuxToolbar(vscode: any): void {
+  const prevSession = document.getElementById("btn-prev-session");
+  const nextSession = document.getElementById("btn-next-session");
+  const prevWindow = document.getElementById("btn-prev-window");
+  const nextWindow = document.getElementById("btn-next-window");
+  const newWindow = document.getElementById("btn-new-window");
+
+  prevSession?.addEventListener("click", () => {
+    vscode.postMessage({ type: "navigateTmuxSession", direction: "prev" });
+  });
+  nextSession?.addEventListener("click", () => {
+    vscode.postMessage({ type: "navigateTmuxSession", direction: "next" });
+  });
+  prevWindow?.addEventListener("click", () => {
+    vscode.postMessage({ type: "navigateTmuxWindow", direction: "prev" });
+  });
+  nextWindow?.addEventListener("click", () => {
+    vscode.postMessage({ type: "navigateTmuxWindow", direction: "next" });
+  });
+  newWindow?.addEventListener("click", () => {
+    vscode.postMessage({ type: "createTmuxWindow" });
+  });
+}
+
+function setupPaneControls(vscode: any): void {
+  const btnSplitV = document.getElementById("btn-split-v");
+  const btnSplitH = document.getElementById("btn-split-h");
+  const btnKillPane = document.getElementById("btn-kill-pane");
+
+  btnSplitV?.addEventListener("click", () => {
+    vscode.postMessage({ type: "splitTmuxPane", direction: "v" });
+  });
+  btnSplitH?.addEventListener("click", () => {
+    vscode.postMessage({ type: "splitTmuxPane", direction: "h" });
+  });
+  btnKillPane?.addEventListener("click", () => {
+    vscode.postMessage({ type: "killTmuxPane" });
   });
 }
 
@@ -681,16 +792,100 @@ window.addEventListener("message", (event) => {
     case "platformInfo":
       currentPlatform = message.platform;
       break;
+    case "terminalConfig":
+      if (terminal) {
+        terminal.options.fontSize = message.fontSize;
+        terminal.options.fontFamily = message.fontFamily;
+        terminal.options.cursorBlink = message.cursorBlink;
+        terminal.options.cursorStyle = message.cursorStyle;
+        if (fitAddon) {
+          fitAddon.fit();
+        }
+        scheduleRefresh();
+      }
+      break;
     case "clipboardContent":
       if (message.text && terminal) {
         terminal.paste(message.text);
       }
       break;
+    case "activeSession": {
+      const toolbar = document.getElementById("tmux-toolbar");
+      const label = document.getElementById("tmux-session-label");
+      const paneControls = document.getElementById("pane-controls");
+      if ("sessionName" in message && message.sessionName) {
+        if (toolbar) {
+          toolbar.classList.remove("hidden");
+        }
+        if (label) {
+          label.textContent = message.sessionName;
+        }
+        if (paneControls) {
+          paneControls.classList.remove("hidden");
+        }
+      } else {
+        if (toolbar) toolbar.classList.add("hidden");
+        if (paneControls) paneControls.classList.add("hidden");
+      }
+      break;
+    }
+    case "showAiToolSelector":
+      AiSelector.show(
+        message.sessionId,
+        message.sessionName,
+        message.defaultTool,
+        message.tools,
+      );
+      break;
   }
 });
 
+// AI Tool Selector: keyboard navigation
+const aiCallbacks = {
+  postMessage: (msg: unknown) => {
+    const m = msg as Record<string, unknown>;
+    // Shared module uses "action", terminal webview uses "type"
+    if (m && m.action === "launchAiTool") {
+      vscode.postMessage({
+        type: "launchAiTool",
+        sessionId: String(m.sessionId ?? ""),
+        tool: String(m.tool ?? ""),
+        savePreference: Boolean(m.savePreference),
+      });
+    }
+  },
+};
+
+document.addEventListener("keydown", (event) => {
+  if (AiSelector.isVisible()) {
+    AiSelector.handleKeydown(event, aiCallbacks);
+  }
+});
+
+// AI Tool Selector: click handling
+document.addEventListener("click", (event) => {
+  if (!AiSelector.isVisible()) return;
+  const target = event
+    .composedPath()
+    .find((el): el is Element => el instanceof Element);
+  if (target) {
+    AiSelector.handleClick(target, aiCallbacks);
+  }
+});
+
+const boot = () => {
+  // Wait for fonts to load before initializing xterm.js so the WebGL
+  // texture atlas is built with the correct Nerd Font glyphs.
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => initTerminal());
+  } else {
+    // Fallback for environments without document.fonts support
+    initTerminal();
+  }
+};
+
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initTerminal);
+  document.addEventListener("DOMContentLoaded", boot);
 } else {
-  initTerminal();
+  boot();
 }

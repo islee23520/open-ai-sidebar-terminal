@@ -16,9 +16,13 @@ build/
 .claude/
 .omc/
 
-# ai
-AGENTS.md
-
 # test coverage
 coverage/
 nul
+
+# screenshots / test artifacts
+*.png
+.remember/
+
+# synapse
+.synapse/

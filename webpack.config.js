@@ -1,4 +1,5 @@
 const path = require("path");
+const CopyPlugin = require("copy-webpack-plugin");
 
 const extensionConfig = {
   target: "node",
@@ -43,10 +44,18 @@ const extensionConfig = {
 const webviewConfig = {
   target: "web",
   mode: "none",
-  entry: "./src/webview/main.ts",
+  entry: {
+    main: "./src/webview/main.ts",
+    dashboard: "./src/webview/dashboard-manager.ts",
+  },
   output: {
     path: path.resolve(__dirname, "dist"),
-    filename: "webview.js",
+    filename: (pathData) => {
+      if (pathData.chunk.name === "main") {
+        return "webview.js";
+      }
+      return "[name].js";
+    },
   },
   resolve: {
     extensions: [".ts", ".js"],
@@ -77,44 +86,23 @@ const webviewConfig = {
       },
     ],
   },
+  plugins: [
+    new CopyPlugin({
+      patterns: [
+        {
+          from: path.resolve(__dirname, "src/webview/*.css"),
+          to: path.resolve(__dirname, "dist/[name][ext]"),
+          globOptions: { ignore: [] },
+        },
+        {
+          from: path.resolve(__dirname, "src/webview/*.html"),
+          to: path.resolve(__dirname, "dist/[name][ext]"),
+          globOptions: { ignore: [] },
+        },
+      ],
+    }),
+  ],
   devtool: "nosources-source-map",
 };
 
-const dashboardConfig = {
-  target: "web",
-  mode: "none",
-  entry: "./src/webview/dashboard.ts",
-  output: {
-    path: path.resolve(__dirname, "dist"),
-    filename: "dashboard.js",
-  },
-  resolve: {
-    extensions: [".ts", ".js"],
-    fallback: {
-      path: false,
-      fs: false,
-    },
-  },
-  module: {
-    rules: [
-      {
-        test: /\.ts$/,
-        exclude: [
-          /node_modules/,
-          /\.test\.ts$/,
-          /src\/test\//,
-          /src\/\__tests__\//,
-        ],
-        use: [
-          {
-            loader: "ts-loader",
-          },
-        ],
-      },
-    ],
-  },
-  devtool: "nosources-source-map",
-};
-
-
-module.exports = [extensionConfig, webviewConfig, dashboardConfig];
+module.exports = [extensionConfig, webviewConfig];

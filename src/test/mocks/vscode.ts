@@ -4,6 +4,7 @@ export const window = {
   showInformationMessage: vi.fn(),
   showErrorMessage: vi.fn(),
   showWarningMessage: vi.fn(),
+  showQuickPick: vi.fn(),
   showTextDocument: vi.fn(),
   activeTextEditor: undefined as any,
   activeTerminal: undefined as any,
@@ -11,25 +12,28 @@ export const window = {
   tabGroups: { all: [] as any[] },
   visibleTextEditors: [] as any[],
   registerWebviewViewProvider: vi.fn(),
-  onDidChangeActiveTextEditor: vi.fn((listener: Function) => ({
-    dispose: vi.fn(),
-  })),
-  onDidChangeTextEditorSelection: vi.fn((listener: Function) => ({
-    dispose: vi.fn(),
-  })),
-  onDidOpenTerminal: vi.fn((listener: Function) => ({ dispose: vi.fn() })),
-  onDidCloseTerminal: vi.fn((listener: Function) => ({ dispose: vi.fn() })),
-  onDidChangeTerminalState: vi.fn((listener: Function) => ({
-    dispose: vi.fn(),
-  })),
-  createStatusBarItem: vi.fn(() => ({
-    text: "",
-    tooltip: "",
-    command: "",
-    show: vi.fn(),
-    hide: vi.fn(),
-    dispose: vi.fn(),
-  })),
+  registerTreeDataProvider: vi.fn(),
+  showInputBox: vi.fn(),
+  onDidChangeActiveTextEditor: vi.fn((listener: Function) => {
+    void listener;
+    return { dispose: vi.fn() };
+  }),
+  onDidChangeTextEditorSelection: vi.fn((listener: Function) => {
+    void listener;
+    return { dispose: vi.fn() };
+  }),
+  onDidOpenTerminal: vi.fn((listener: Function) => {
+    void listener;
+    return { dispose: vi.fn() };
+  }),
+  onDidCloseTerminal: vi.fn((listener: Function) => {
+    void listener;
+    return { dispose: vi.fn() };
+  }),
+  onDidChangeTerminalState: vi.fn((listener: Function) => {
+    void listener;
+    return { dispose: vi.fn() };
+  }),
   createWebviewPanel: vi.fn(() => ({
     webview: {
       html: "",
@@ -41,57 +45,70 @@ export const window = {
     onDidDispose: vi.fn(),
     dispose: vi.fn(),
   })),
-  createOutputChannel: vi.fn((name: string, options?: { log?: boolean }) => ({
-    append: vi.fn(),
-    appendLine: vi.fn(),
-    replace: vi.fn(),
-    clear: vi.fn(),
-    show: vi.fn(),
-    hide: vi.fn(),
-    dispose: vi.fn(),
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    name,
-  })),
+  createOutputChannel: vi.fn((name: string, options?: { log?: boolean }) => {
+    void options;
+    return {
+      append: vi.fn(),
+      appendLine: vi.fn(),
+      replace: vi.fn(),
+      clear: vi.fn(),
+      show: vi.fn(),
+      hide: vi.fn(),
+      dispose: vi.fn(),
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      name,
+    };
+  }),
 };
 
 export const workspace = {
   getConfiguration: vi.fn(() => ({
-    get: vi.fn((key: string, defaultValue?: any) => defaultValue),
+    get: vi.fn((key: string, defaultValue?: any) => {
+      void key;
+      return defaultValue;
+    }),
+    inspect: vi.fn(() => undefined),
     update: vi.fn(),
   })),
   openTextDocument: vi.fn(async (uri: any) => new TextDocument(uri, "")),
   workspaceFolders: undefined as any,
   asRelativePath: vi.fn((uri: any, includeWorkspaceFolder?: boolean) => {
+    void includeWorkspaceFolder;
     if (typeof uri === "string") return uri;
     return uri.fsPath || uri.path || "";
   }),
-  onDidChangeTextDocument: vi.fn((listener: Function) => ({
-    dispose: vi.fn(),
-  })),
+  onDidChangeTextDocument: vi.fn((listener: Function) => {
+    void listener;
+    return { dispose: vi.fn() };
+  }),
   findFiles: vi.fn(),
 };
 
 export const languages = {
-  onDidChangeDiagnostics: vi.fn((listener: Function) => ({
-    dispose: vi.fn(),
-  })),
+  onDidChangeDiagnostics: vi.fn((listener: Function) => {
+    void listener;
+    return { dispose: vi.fn() };
+  }),
   getDiagnostics: vi.fn((uri?: any) => (uri ? [] : [])),
   registerCodeActionsProvider: vi.fn(() => ({ dispose: vi.fn() })),
 };
 
 export const commands = {
-  registerCommand: vi.fn((id: string, callback: Function) => ({
-    dispose: vi.fn(),
-  })),
+  registerCommand: vi.fn((id: string, callback: Function) => {
+    void id;
+    void callback;
+    return { dispose: vi.fn() };
+  }),
   executeCommand: vi.fn(),
 };
 
-export enum StatusBarAlignment {
-  Left = 1,
-  Right = 2,
+export enum ConfigurationTarget {
+  Global = 1,
+  Workspace = 2,
+  WorkspaceFolder = 3,
 }
 
 export enum DiagnosticSeverity {
@@ -104,6 +121,10 @@ export enum DiagnosticSeverity {
 export const CodeActionKind = {
   QuickFix: "quickfix",
 };
+
+export class ThemeColor {
+  constructor(public readonly id: string) {}
+}
 
 export const env = {
   shell: "/bin/bash",
@@ -151,7 +172,9 @@ export class EventEmitter<T = any> {
   };
 
   fire = (data: T) => {
-    this.listeners.forEach((listener) => listener(data));
+    this.listeners.forEach((listener) => {
+      listener(data);
+    });
   };
 
   dispose = () => {
@@ -210,14 +233,23 @@ export const WebviewView = vi.fn(() => ({
   webview: {
     html: "",
     options: {},
-    onDidReceiveMessage: vi.fn((listener: Function) => ({ dispose: vi.fn() })),
+    onDidReceiveMessage: vi.fn((listener: Function) => {
+      void listener;
+      return { dispose: vi.fn() };
+    }),
     postMessage: vi.fn(),
     asWebviewUri: vi.fn((uri: any) => uri),
     cspSource: "default-src 'none'",
   },
   visible: true,
-  onDidDispose: vi.fn((listener: Function) => ({ dispose: vi.fn() })),
-  onDidChangeVisibility: vi.fn((listener: Function) => ({ dispose: vi.fn() })),
+  onDidDispose: vi.fn((listener: Function) => {
+    void listener;
+    return { dispose: vi.fn() };
+  }),
+  onDidChangeVisibility: vi.fn((listener: Function) => {
+    void listener;
+    return { dispose: vi.fn() };
+  }),
   show: vi.fn(),
 }));
 
@@ -320,8 +352,10 @@ export default {
   workspace,
   languages,
   commands,
-  StatusBarAlignment,
+  ConfigurationTarget,
   DiagnosticSeverity,
+  CodeActionKind,
+  ThemeColor,
   env,
   Uri,
   Range,

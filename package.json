@@ -1,8 +1,8 @@
 {
   "name": "opencode-sidebar-tui",
-  "displayName": "OpenCode Sidebar TUI",
+  "displayName": "Open AI Sidebar Terminal",
   "description": "Automatically render OpenCode TUI in VS Code sidebar with full terminal support",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "publisher": "islee23520",
   "icon": "icon.png",
   "engines": {
@@ -33,7 +33,14 @@
       "activitybar": [
         {
           "id": "opencodeTuiContainer",
-          "title": "OpenCode",
+          "title": "Open AI Sidebar Terminal",
+          "icon": "resources/opencode-activity-bar.svg"
+        }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "opencodeTuiTerminal",
+          "title": "Terminal",
           "icon": "resources/opencode-activity-bar.svg"
         }
       ]
@@ -41,20 +48,20 @@
     "views": {
       "opencodeTuiContainer": [
         {
+          "id": "opencodeTui.terminalDashboard",
+          "name": "Open AI Sidebar Terminal",
+          "type": "webview",
+          "icon": "resources/opencode-activity-bar.svg",
+          "contextualTitle": "Open AI Sidebar Terminal"
+        }
+      ],
+      "opencodeTuiTerminal": [
+        {
           "id": "opencodeTui",
           "name": "Terminal",
           "type": "webview",
-          "icon": "$(terminal)",
+          "icon": "resources/opencode-activity-bar.svg",
           "contextualTitle": "OpenCode TUI"
-        },
-
-
-        {
-          "id": "opencodeTui.instancesDashboard",
-          "name": "Instances",
-          "type": "webview",
-          "icon": "$(server)",
-          "contextualTitle": "OpenCode Instances"
         }
       ]
     },
@@ -66,7 +73,7 @@
       },
       {
         "command": "opencodeTui.sendToTerminal",
-        "title": "Send to OpenCode Terminal",
+        "title": "Send to Active Terminal",
         "category": "OpenCode TUI"
       },
       {
@@ -85,12 +92,6 @@
         "category": "OpenCode TUI"
       },
       {
-        "command": "opencodeTui.restart",
-        "title": "Restart OpenCode",
-        "category": "OpenCode TUI",
-        "icon": "$(debug-restart)"
-      },
-      {
         "command": "opencodeTui.paste",
         "title": "Paste",
         "category": "OpenCode TUI",
@@ -98,31 +99,137 @@
       },
       {
         "command": "opencode.openInNewWindow",
-        "title": "Open Instance in New Window",
+        "title": "Open Tmux Session in New Window",
         "category": "OpenCode TUI",
         "icon": "$(empty-window)"
       },
       {
         "command": "opencode.spawnForWorkspace",
-        "title": "Spawn Instance for Workspace",
+        "title": "Spawn Tmux Session for Workspace",
         "category": "OpenCode TUI",
         "icon": "$(add)"
       },
       {
         "command": "opencodeTui.selectInstance",
-        "title": "Select OpenCode Instance",
+        "title": "Select OpenCode Tmux Session",
         "category": "OpenCode TUI",
         "icon": "$(server-environment)"
+      },
+      {
+        "command": "opencodeTui.switchTmuxSession",
+        "title": "Switch Tmux Session",
+        "category": "OpenCode TUI"
+      },
+      {
+        "command": "opencodeTui.browseTmuxSessions",
+        "title": "Browse Tmux Sessions",
+        "category": "OpenCode TUI",
+        "icon": "$(server-environment)"
+      },
+      {
+        "command": "opencodeTui.switchNativeShell",
+        "title": "Switch to Native Shell",
+        "category": "OpenCode TUI"
+      },
+      {
+        "command": "opencodeTui.openTerminalManager",
+        "title": "Open Terminal Managers",
+        "category": "OpenCode TUI",
+        "icon": "$(server)"
+      },
+      {
+        "command": "opencodeTui.tmuxSwitchPane",
+        "title": "Switch to Pane",
+        "category": "OpenCode TUI",
+        "icon": "$(check)"
+      },
+      {
+        "command": "opencodeTui.tmuxSplitPaneH",
+        "title": "Split Pane Horizontal",
+        "category": "OpenCode TUI",
+        "icon": "$(split-horizontal)"
+      },
+      {
+        "command": "opencodeTui.tmuxSplitPaneV",
+        "title": "Split Pane Vertical",
+        "category": "OpenCode TUI",
+        "icon": "$(split-vertical)"
+      },
+      {
+        "command": "opencodeTui.tmuxSplitPaneWithCommand",
+        "title": "Split Pane with Command",
+        "category": "OpenCode TUI",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "opencodeTui.tmuxSendTextToPane",
+        "title": "Send Text to Pane",
+        "category": "OpenCode TUI",
+        "icon": "$(file-symlink-file)"
+      },
+      {
+        "command": "opencodeTui.tmuxResizePane",
+        "title": "Resize Pane",
+        "category": "OpenCode TUI",
+        "icon": "$(move)"
+      },
+      {
+        "command": "opencodeTui.tmuxSwapPane",
+        "title": "Swap Panes",
+        "category": "OpenCode TUI",
+        "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "opencodeTui.tmuxKillPane",
+        "title": "Kill Pane",
+        "category": "OpenCode TUI",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "opencodeTui.tmuxNextWindow",
+        "title": "Next Window",
+        "category": "OpenCode TUI",
+        "icon": "$(chevron-right)"
+      },
+      {
+        "command": "opencodeTui.tmuxPrevWindow",
+        "title": "Previous Window",
+        "category": "OpenCode TUI",
+        "icon": "$(chevron-left)"
+      },
+      {
+        "command": "opencodeTui.tmuxCreateWindow",
+        "title": "Create Window",
+        "category": "OpenCode TUI",
+        "icon": "$(add)"
+      },
+      {
+        "command": "opencodeTui.tmuxKillWindow",
+        "title": "Kill Window",
+        "category": "OpenCode TUI",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "opencodeTui.tmuxSelectWindow",
+        "title": "Select Window",
+        "category": "OpenCode TUI",
+        "icon": "$(list-selection)"
+      },
+      {
+        "command": "opencodeTui.tmuxKillSession",
+        "title": "Kill Session",
+        "category": "OpenCode TUI",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "opencodeTui.tmuxRefresh",
+        "title": "Refresh Terminal Manager",
+        "category": "OpenCode TUI",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
-      "view/title": [
-        {
-          "command": "opencodeTui.restart",
-          "when": "view == opencodeTui",
-          "group": "navigation@1"
-        }
-      ],
+      "view/title": [],
       "explorer/context": [
         {
           "command": "opencodeTui.sendFileToTerminal",
@@ -156,6 +263,12 @@
         "when": "editorTextFocus || terminalFocus"
       },
       {
+        "command": "opencodeTui.browseTmuxSessions",
+        "key": "ctrl+alt+t",
+        "mac": "cmd+alt+t",
+        "when": "focusedView == 'opencodeTui'"
+      },
+      {
         "command": "-workbench.action.quickOpen",
         "key": "ctrl+p",
         "when": "focusedView == 'opencodeTui'"
@@ -182,8 +295,8 @@
         },
         "opencodeTui.command": {
           "type": "string",
-          "default": "opencode -c",
-          "description": "Command to launch OpenCode with arguments"
+          "default": "opencode",
+          "description": "Legacy command override for OpenCode startup. Prefer opencodeTui.aiTools for multi-tool configuration."
         },
         "opencodeTui.fontSize": {
           "type": "number",
@@ -194,8 +307,8 @@
         },
         "opencodeTui.fontFamily": {
           "type": "string",
-          "default": "monospace",
-          "description": "Terminal font family"
+          "default": "'JetBrainsMono Nerd Font', 'FiraCode Nerd Font', 'CascadiaCode NF', Menlo, monospace",
+          "description": "Terminal font family (Nerd Font recommended for Powerline/glyph support)"
         },
         "opencodeTui.cursorBlink": {
           "type": "boolean",
@@ -270,11 +383,6 @@
           "default": "info",
           "description": "Log output level for OpenCode TUI"
         },
-        "opencodeTui.showStatusBar": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show status bar item for quick access"
-        },
         "opencodeTui.contextDebounceMs": {
           "type": "number",
           "default": 500,
@@ -310,6 +418,92 @@
             "warning"
           ],
           "description": "Diagnostic severities that trigger code actions"
+        },
+        "opencodeTui.aiTools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Unique identifier for the AI tool"
+              },
+              "label": {
+                "type": "string",
+                "description": "Display name for the AI tool"
+              },
+              "path": {
+                "type": "string",
+                "description": "Path to the executable. Empty or unset = use bare command name (resolved from PATH)"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Default arguments to pass when launching this tool"
+              },
+              "aliases": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Additional names that should resolve to this tool"
+              },
+              "operator": {
+                "type": "string",
+                "description": "Optional operator id used to apply tool-specific launch and routing behavior"
+              }
+            },
+            "required": [
+              "name",
+              "label"
+            ]
+          },
+          "default": [
+            {
+              "name": "opencode",
+              "label": "OpenCode",
+              "path": "",
+              "args": [
+                "-c"
+              ],
+              "operator": "opencode"
+            },
+            {
+              "name": "claude-code",
+              "label": "Claude Code",
+              "path": "",
+              "args": [],
+              "aliases": [
+                "claude"
+              ],
+              "operator": "claude-code"
+            },
+            {
+              "name": "codex",
+              "label": "Codex",
+              "path": "",
+              "args": [],
+              "operator": "codex"
+            }
+          ],
+          "description": "Configure AI coding tools with custom paths, arguments, aliases, and operator ids"
+        },
+        "opencodeTui.defaultAiTool": {
+          "type": "string",
+          "default": "",
+          "description": "Name of the default AI tool to launch when creating a new tmux session"
+        },
+        "opencodeTui.nativeShellDefault": {
+          "type": "string",
+          "default": "",
+          "description": "Default behavior when switching to native shell. Empty = ask every time, 'shell' = default shell, or set any configured AI tool name such as 'opencode', 'claude-code', or 'codex'"
+        },
+        "opencodeTui.tmuxSessionDefault": {
+          "type": "string",
+          "default": "",
+          "description": "Default behavior when creating a new tmux session. Empty = ask every time, 'shell' = create without launching a tool, or set any configured AI tool name"
         }
       }
     }
@@ -339,10 +533,12 @@
     "@typescript-eslint/eslint-plugin": "^8.55.0",
     "@typescript-eslint/parser": "^8.55.0",
     "@vitest/coverage-v8": "^4.0.18",
+    "copy-webpack-plugin": "^14.0.0",
     "css-loader": "^7.1.2",
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^10.0.0",
     "eslint-plugin-prettier": "^5.5.4",
+    "jsdom": "^29.0.1",
     "prettier": "^3.7.2",
     "style-loader": "^4.0.0",
     "ts-loader": "^9.5.4",

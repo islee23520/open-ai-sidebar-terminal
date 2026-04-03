@@ -11,7 +11,7 @@ import { TerminalManager } from "../terminals/TerminalManager";
 
 const DEFAULT_COMMAND = "opencode -c";
 
-export interface SpawnOptions {
+interface SpawnOptions {
   command?: string;
   args?: string[];
   preferredPort?: number;

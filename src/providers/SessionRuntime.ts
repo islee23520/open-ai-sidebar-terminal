@@ -1,0 +1,1203 @@
+import * as os from "os";
+import * as path from "path";
+import * as vscode from "vscode";
+import { OutputCaptureManager } from "../services/OutputCaptureManager";
+import { OpenCodeApiClient } from "../services/OpenCodeApiClient";
+import { PortManager } from "../services/PortManager";
+import { ContextSharingService } from "../services/ContextSharingService";
+import { OutputChannelService } from "../services/OutputChannelService";
+import { InstanceId, InstanceStore } from "../services/InstanceStore";
+import { AiToolConfig, resolveAiToolConfigs } from "../types";
+import { AiToolFileReference } from "../services/aiTools/AiToolOperator";
+import {
+  TmuxSessionManager,
+  TmuxUnavailableError,
+} from "../services/TmuxSessionManager";
+import { TerminalManager } from "../terminals/TerminalManager";
+import { AiToolOperatorRegistry } from "../services/aiTools/AiToolOperatorRegistry";
+
+interface StartupWorkspaceResolution {
+  workspacePath: string;
+  isWorkspaceScoped: boolean;
+}
+
+interface SessionRuntimeCallbacks {
+  postMessage: (message: unknown) => void;
+  onActiveInstanceChanged: (instanceId: InstanceId) => void;
+  requestStartOpenCode: () => Promise<void>;
+}
+
+export class SessionRuntime {
+  private static readonly LEGACY_TERMINAL_ID: InstanceId = "opencode-main";
+
+  private activeInstanceId: InstanceId = "default";
+  private isStarted = false;
+  private isStarting = false;
+  private apiClient?: OpenCodeApiClient;
+  private httpAvailable = false;
+  private autoContextSent = false;
+  private dataListener?: vscode.Disposable;
+  private exitListener?: vscode.Disposable;
+  private activeInstanceSubscription?: vscode.Disposable;
+  private lastKnownCols = 0;
+  private lastKnownRows = 0;
+  private selectedTmuxSessionId?: string;
+  private forceNativeShellNextStart = false;
+  private pendingLaunchToolName?: string;
+  private activeTool?: AiToolConfig;
+  private clipboardPollInterval?: ReturnType<typeof setInterval>;
+  private lastTmuxBuffer = "";
+
+  public constructor(
+    private readonly terminalManager: TerminalManager,
+    _captureManager: OutputCaptureManager,
+    _openCodeApiClient: OpenCodeApiClient | undefined,
+    private readonly portManager: PortManager,
+    private readonly tmuxSessionManager: TmuxSessionManager | undefined,
+    private readonly instanceStore: InstanceStore | undefined,
+    private readonly logger: OutputChannelService,
+    private readonly contextSharingService: ContextSharingService,
+    private readonly aiToolRegistry: AiToolOperatorRegistry,
+    private readonly callbacks: SessionRuntimeCallbacks,
+  ) {
+    if (this.instanceStore) {
+      this.subscribeToActiveInstanceChanges();
+    } else {
+      this.activeInstanceId = SessionRuntime.LEGACY_TERMINAL_ID;
+    }
+  }
+
+  public getActiveInstanceId(): InstanceId {
+    return this.activeInstanceId;
+  }
+
+  public getLastKnownTerminalSize(): { cols: number; rows: number } {
+    return { cols: this.lastKnownCols, rows: this.lastKnownRows };
+  }
+
+  public setLastKnownTerminalSize(cols: number, rows: number): void {
+    this.lastKnownCols = cols;
+    this.lastKnownRows = rows;
+  }
+
+  public isStartedFlag(): boolean {
+    return this.isStarted;
+  }
+
+  public getApiClient(): OpenCodeApiClient | undefined {
+    return this.apiClient;
+  }
+
+  public getActiveTool(): AiToolConfig | undefined {
+    return this.activeTool;
+  }
+
+  public getSelectedTmuxSessionId(): string | undefined {
+    return this.selectedTmuxSessionId;
+  }
+
+  public resolveToolByName(toolName: string): AiToolConfig | undefined {
+    return this.resolveToolConfig(toolName);
+  }
+
+  public rememberSelectedTool(
+    toolName: string | undefined,
+    instanceId = this.activeInstanceId,
+  ): void {
+    this.persistSelectedTool(toolName, instanceId);
+    if (instanceId === this.activeInstanceId) {
+      this.activeTool = this.resolveToolConfig(toolName);
+    }
+  }
+
+  public isHttpAvailable(): boolean {
+    return this.httpAvailable;
+  }
+
+  public hasLiveTerminalProcess(): boolean {
+    return (
+      this.isStarted &&
+      this.terminalManager.getTerminal(this.activeInstanceId) !== undefined
+    );
+  }
+
+  public async switchToInstance(
+    instanceId: InstanceId,
+    options?: { forceRestart?: boolean; preferredToolName?: string },
+  ): Promise<void> {
+    const forceRestart = options?.forceRestart ?? false;
+    if (instanceId === this.activeInstanceId && !forceRestart) {
+      return;
+    }
+
+    this.disposeListeners();
+    this.portManager.releaseTerminalPorts(this.activeInstanceId);
+    this.portManager.releaseTerminalPorts(instanceId);
+    this.resetState(false);
+    this.activeInstanceId = instanceId;
+
+    this.callbacks.postMessage({ type: "clearTerminal" });
+
+    const existingTerminal =
+      this.terminalManager.getByInstance(instanceId) ||
+      this.terminalManager.getTerminal(instanceId);
+
+    if (existingTerminal && !forceRestart) {
+      this.isStarted = true;
+      this.activeTool = this.resolveStoredTool(instanceId);
+      this.reconnectListeners();
+      this.syncActiveInstance(instanceId);
+
+      const config = vscode.workspace.getConfiguration("opencodeTui");
+      const enableHttpApi = config.get<boolean>("enableHttpApi", true);
+      const operator = this.activeTool
+        ? this.aiToolRegistry.getForConfig(this.activeTool)
+        : undefined;
+      if (
+        enableHttpApi &&
+        existingTerminal.port &&
+        this.activeTool &&
+        operator?.supportsHttpApi(this.activeTool)
+      ) {
+        const httpTimeout = config.get<number>("httpTimeout", 5000);
+        this.apiClient = new OpenCodeApiClient(
+          existingTerminal.port,
+          10,
+          200,
+          httpTimeout,
+        );
+        await this.pollForHttpReadiness();
+      }
+
+      if (this.lastKnownCols && this.lastKnownRows) {
+        this.terminalManager.resizeTerminal(
+          this.activeInstanceId,
+          this.lastKnownCols,
+          this.lastKnownRows,
+        );
+      }
+      return;
+    }
+
+    if (existingTerminal && forceRestart) {
+      this.terminalManager.killByInstance(instanceId);
+      this.terminalManager.killTerminal(instanceId);
+    }
+
+    this.pendingLaunchToolName =
+      options?.preferredToolName ?? this.pendingLaunchToolName;
+    await this.callbacks.requestStartOpenCode();
+    this.syncActiveInstance(instanceId);
+  }
+
+  public async startOpenCode(): Promise<void> {
+    if (this.isStarted || this.isStarting) {
+      return;
+    }
+
+    this.isStarting = true;
+
+    try {
+      this.disposeListeners();
+
+      const config = vscode.workspace.getConfiguration("opencodeTui");
+      const enableHttpApi = config.get<boolean>("enableHttpApi", true);
+      const httpTimeout = config.get<number>("httpTimeout", 5000);
+
+      let resolvedTool: AiToolConfig | undefined;
+      let command: string | undefined;
+
+      if (!(this.forceNativeShellNextStart && !this.pendingLaunchToolName)) {
+        resolvedTool = await this.resolveToolForStartup(config);
+        if (!resolvedTool) {
+          this.isStarting = false;
+          return;
+        }
+
+        const operator = this.aiToolRegistry.getForConfig(resolvedTool);
+        command = operator.getLaunchCommand(resolvedTool);
+      }
+
+      this.activeTool = resolvedTool;
+      const forceNativeShell = this.forceNativeShellNextStart;
+      const selectedTmuxSessionId = this.selectedTmuxSessionId;
+      let tmuxSessionId = forceNativeShell
+        ? undefined
+        : (selectedTmuxSessionId ??
+          this.resolveTmuxSessionIdForInstance(this.activeInstanceId));
+
+      let port: number | undefined;
+      const { workspacePath, isWorkspaceScoped } =
+        this.resolveStartupWorkspacePath();
+
+      if (!forceNativeShell && !selectedTmuxSessionId && isWorkspaceScoped) {
+        const ensuredSessionId =
+          await this.ensureWorkspaceSession(workspacePath);
+        if (ensuredSessionId) {
+          tmuxSessionId = ensuredSessionId;
+        }
+      } else if (
+        !forceNativeShell &&
+        !selectedTmuxSessionId &&
+        !tmuxSessionId
+      ) {
+        tmuxSessionId = await this.resolveFallbackTmuxSessionId();
+      }
+
+      if (tmuxSessionId && this.tmuxSessionManager) {
+        try {
+          await this.tmuxSessionManager.setMouseOn(tmuxSessionId);
+        } catch {}
+      }
+
+      const terminalCommand = this.resolveTerminalStartupCommand(
+        command,
+        tmuxSessionId,
+      );
+      this.selectedTmuxSessionId = undefined;
+      this.forceNativeShellNextStart = false;
+      this.pendingLaunchToolName = undefined;
+
+      const activeOperator =
+        this.activeTool && this.aiToolRegistry.getForConfig(this.activeTool);
+      if (
+        enableHttpApi &&
+        command !== undefined &&
+        this.activeTool &&
+        activeOperator?.supportsHttpApi(this.activeTool)
+      ) {
+        try {
+          port = this.portManager.assignPortToTerminal(this.activeInstanceId);
+          this.logger.info(
+            `[TerminalProvider] Assigned port ${port} to terminal ${this.activeInstanceId}`,
+          );
+        } catch (error) {
+          this.logger.error(
+            `[TerminalProvider] Failed to assign port: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          vscode.window.showWarningMessage(
+            "Failed to assign port for OpenCode HTTP API. Running without HTTP features.",
+          );
+        }
+      }
+
+      this.terminalManager.createTerminal(
+        this.activeInstanceId,
+        terminalCommand,
+        port
+          ? {
+              _EXTENSION_OPENCODE_PORT: port.toString(),
+              OPENCODE_CALLER: "vscode",
+            }
+          : {},
+        port,
+        this.lastKnownCols || undefined,
+        this.lastKnownRows || undefined,
+        this.activeInstanceId,
+        workspacePath,
+      );
+
+      if (this.instanceStore) {
+        try {
+          const existing = this.instanceStore.get(this.activeInstanceId);
+          if (existing) {
+            this.instanceStore.upsert({
+              ...existing,
+              config: {
+                ...existing.config,
+                command,
+                selectedAiTool: this.activeTool?.name,
+              },
+              runtime: {
+                ...existing.runtime,
+                terminalKey: this.activeInstanceId,
+                tmuxSessionId,
+                port: port ?? existing.runtime.port,
+              },
+            });
+          } else {
+            this.instanceStore.upsert({
+              config: {
+                id: this.activeInstanceId,
+                command,
+                selectedAiTool: this.activeTool?.name,
+              },
+              runtime: {
+                terminalKey: this.activeInstanceId,
+                tmuxSessionId,
+                port,
+              },
+              state: "connected",
+            });
+          }
+        } catch (err) {
+          this.logger.warn(
+            `[TerminalProvider] Failed to update instance store with terminal key: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+
+      this.reconnectListeners();
+
+      this.isStarted = true;
+
+      this.notifyActiveSession(tmuxSessionId);
+
+      if (enableHttpApi && port) {
+        this.apiClient = new OpenCodeApiClient(port, 10, 200, httpTimeout);
+        await this.pollForHttpReadiness();
+      } else {
+        this.logger.info(
+          "[TerminalProvider] HTTP API disabled or unavailable, using message passing fallback",
+        );
+        this.httpAvailable = false;
+      }
+    } finally {
+      this.isStarting = false;
+    }
+  }
+
+  public restart(): void {
+    this.disposeListeners();
+    this.terminalManager.killTerminal(this.activeInstanceId);
+    this.resetState();
+
+    this.callbacks.postMessage({ type: "clearTerminal" });
+
+    void this.callbacks.requestStartOpenCode();
+  }
+
+  public resetState(releasePorts: boolean = true): void {
+    this.isStarted = false;
+    this.isStarting = false;
+    this.httpAvailable = false;
+    this.apiClient = undefined;
+    this.activeTool = undefined;
+    this.autoContextSent = false;
+    if (releasePorts) {
+      this.portManager.releaseTerminalPorts(this.activeInstanceId);
+    }
+  }
+
+  public disposeListeners(): void {
+    if (this.dataListener) {
+      this.dataListener.dispose();
+      this.dataListener = undefined;
+    }
+    if (this.exitListener) {
+      this.exitListener.dispose();
+      this.exitListener = undefined;
+    }
+  }
+
+  public reconnectListeners(): void {
+    this.disposeListeners();
+
+    this.dataListener = this.terminalManager.onData((event) => {
+      if (event.id === this.activeInstanceId) {
+        this.callbacks.postMessage({
+          type: "terminalOutput",
+          data: event.data,
+        });
+      }
+    });
+
+    this.exitListener = this.terminalManager.onExit((id) => {
+      if (id === this.activeInstanceId) {
+        this.resetState();
+        this.callbacks.postMessage({
+          type: "terminalExited",
+        });
+      }
+    });
+  }
+
+  public async pollForHttpReadiness(): Promise<void> {
+    if (!this.apiClient) {
+      return;
+    }
+
+    const maxRetries = 10;
+    const delayMs = 200;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const isHealthy = await this.apiClient.healthCheck();
+        if (isHealthy) {
+          this.httpAvailable = true;
+          this.logger.info("[TerminalProvider] HTTP API is ready");
+          await this.sendAutoContext();
+          return;
+        }
+      } catch {
+        this.logger.info(
+          `[TerminalProvider] Health check attempt ${attempt}/${maxRetries} failed`,
+        );
+      }
+
+      if (attempt < maxRetries) {
+        await this.sleep(delayMs);
+      }
+    }
+
+    this.logger.info(
+      "[TerminalProvider] HTTP API not available after retries, using message passing fallback",
+    );
+    this.httpAvailable = false;
+  }
+
+  public sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  public resolveStartupWorkspacePath(): StartupWorkspaceResolution {
+    const instanceWorkspacePath = this.resolveWorkspacePathFromActiveInstance();
+    if (instanceWorkspacePath) {
+      return { workspacePath: instanceWorkspacePath, isWorkspaceScoped: true };
+    }
+
+    const workspaceFolderPath =
+      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (workspaceFolderPath) {
+      return { workspacePath: workspaceFolderPath, isWorkspaceScoped: true };
+    }
+
+    return { workspacePath: os.homedir(), isWorkspaceScoped: false };
+  }
+
+  public resolveWorkspacePathFromActiveInstance(): string | undefined {
+    if (!this.instanceStore) {
+      return undefined;
+    }
+
+    const record = this.instanceStore.get(this.activeInstanceId);
+    const workspaceUri = record?.config.workspaceUri;
+    if (!workspaceUri) {
+      return undefined;
+    }
+
+    try {
+      const parsed = vscode.Uri.parse(workspaceUri);
+      return parsed.fsPath || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  public async ensureWorkspaceSession(
+    workspacePath: string,
+  ): Promise<string | undefined> {
+    if (!this.tmuxSessionManager) {
+      return undefined;
+    }
+
+    const sessionName = path.basename(workspacePath) || this.activeInstanceId;
+
+    try {
+      const result = await this.tmuxSessionManager.ensureSession(
+        sessionName,
+        workspacePath,
+      );
+      this.logger.info(
+        `[TerminalProvider] tmux session ${result.action}: ${result.session.id}`,
+      );
+      return result.session.id;
+    } catch (error) {
+      if (error instanceof TmuxUnavailableError) {
+        this.logger.info(
+          "[TerminalProvider] tmux unavailable, continuing with default startup",
+        );
+        return undefined;
+      }
+
+      this.logger.warn(
+        `[TerminalProvider] Failed to ensure tmux session: ${error instanceof Error ? error.message : String(error)}. Continuing with default startup.`,
+      );
+      return undefined;
+    }
+  }
+
+  public resolveTerminalStartupCommand(
+    defaultCommand: string | undefined,
+    tmuxSessionId?: string,
+  ): string | undefined {
+    if (!tmuxSessionId) {
+      return defaultCommand;
+    }
+
+    return `tmux attach-session -t ${tmuxSessionId} \\; set-option -u status off`;
+  }
+
+  public resolveTmuxSessionIdForInstance(
+    instanceId: InstanceId,
+  ): string | undefined {
+    if (!this.instanceStore) {
+      return undefined;
+    }
+
+    return this.instanceStore.get(instanceId)?.runtime.tmuxSessionId;
+  }
+
+  public async resolveFallbackTmuxSessionId(): Promise<string | undefined> {
+    if (!this.tmuxSessionManager) {
+      return undefined;
+    }
+
+    try {
+      const sessions = await this.tmuxSessionManager.discoverSessions();
+      if (sessions.length === 0) {
+        return undefined;
+      }
+
+      const preferredSession =
+        sessions.find((session) => session.isActive) ?? sessions[0];
+      return preferredSession?.id;
+    } catch (error) {
+      this.logger.warn(
+        `[TerminalProvider] Failed to resolve fallback tmux session: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
+    }
+  }
+
+  public resolveInstanceIdFromSessionId(sessionId: string): InstanceId {
+    if (!this.instanceStore) {
+      return this.activeInstanceId;
+    }
+
+    if (this.instanceStore.get(sessionId)) {
+      return sessionId;
+    }
+
+    const records = this.instanceStore.getAll();
+
+    const tmuxMapped = records.find(
+      (record) => record.runtime.tmuxSessionId === sessionId,
+    );
+    if (tmuxMapped) {
+      return tmuxMapped.config.id;
+    }
+
+    const workspaceMapped = records.find((record) => {
+      const workspaceUri = record.config.workspaceUri;
+      if (!workspaceUri) {
+        return false;
+      }
+
+      try {
+        const workspacePath = vscode.Uri.parse(workspaceUri).fsPath;
+        return path.basename(workspacePath) === sessionId;
+      } catch {
+        return false;
+      }
+    });
+
+    return workspaceMapped?.config.id ?? this.activeInstanceId;
+  }
+
+  public async switchToTmuxSession(sessionId: string): Promise<void> {
+    await this.switchToTmuxSessionWithTool(sessionId);
+  }
+
+  public async switchToTmuxSessionWithTool(
+    sessionId: string,
+    preferredToolName?: string,
+  ): Promise<void> {
+    this.forceNativeShellNextStart = false;
+    this.selectedTmuxSessionId = sessionId;
+    this.pendingLaunchToolName = preferredToolName;
+    if (preferredToolName) {
+      const instanceId = this.resolveInstanceIdFromSessionId(sessionId);
+      this.persistSelectedTool(preferredToolName, instanceId);
+    }
+    await this.switchToInstance(
+      this.resolveInstanceIdFromSessionId(sessionId),
+      {
+        forceRestart: true,
+        preferredToolName,
+      },
+    );
+    this.notifyActiveSession(sessionId);
+  }
+
+  private async resolveLaunchChoice(
+    configKey: "nativeShellDefault" | "tmuxSessionDefault",
+  ): Promise<string | undefined> {
+    const config = vscode.workspace.getConfiguration("opencodeTui");
+    const persisted = config.get<string>(configKey, "");
+    if (persisted === "shell" || this.resolveToolConfig(persisted, config)) {
+      return persisted;
+    }
+
+    const items = this.getConfiguredTools(config).map((tool) => ({
+      label: `$(terminal) ${tool.label}`,
+      description: `Launch ${tool.label} in the terminal`,
+      value: tool.name,
+    }));
+    items.push({
+      label: "$(shell) Default Shell (zsh)",
+      description: "Launch default shell without an AI tool",
+      value: "shell",
+    });
+
+    const picked = await vscode.window.showQuickPick(items, {
+      placeHolder: "What would you like to launch?",
+      canPickMany: false,
+    });
+
+    if (!picked) {
+      return undefined;
+    }
+
+    const choice =
+      picked.value ??
+      (picked.label.includes("Default Shell")
+        ? "shell"
+        : this.getConfiguredTools(config).find((tool) =>
+            picked.label.includes(tool.label),
+          )?.name);
+    if (!choice) {
+      return undefined;
+    }
+
+    const remember = await vscode.window.showInformationMessage(
+      "Remember this choice? You can change it later in settings.",
+      { modal: false },
+      "Yes, remember",
+    );
+
+    if (remember === "Yes, remember") {
+      await config.update(configKey, choice, vscode.ConfigurationTarget.Global);
+    }
+
+    return choice;
+  }
+
+  public async switchToNativeShell(): Promise<void> {
+    this.selectedTmuxSessionId = undefined;
+    this.forceNativeShellNextStart = true;
+    this.pendingLaunchToolName = undefined;
+
+    if (this.instanceStore) {
+      const existing = this.instanceStore.get(this.activeInstanceId);
+      if (existing?.runtime.tmuxSessionId) {
+        this.instanceStore.upsert({
+          ...existing,
+          runtime: {
+            ...existing.runtime,
+            tmuxSessionId: undefined,
+          },
+        });
+      }
+    }
+
+    await this.switchToInstance(this.activeInstanceId, { forceRestart: true });
+    this.notifyActiveSession(undefined);
+  }
+
+  public async createTmuxSession(): Promise<string | undefined> {
+    if (!this.tmuxSessionManager) {
+      return undefined;
+    }
+
+    const { workspacePath } = this.resolveStartupWorkspacePath();
+
+    try {
+      const sessions = await this.tmuxSessionManager.discoverSessions();
+      const existingIds = new Set(sessions.map((session) => session.id));
+      const baseName = path.basename(workspacePath) || "opencode";
+
+      let candidate = baseName;
+      let suffix = 2;
+      while (existingIds.has(candidate)) {
+        candidate = `${baseName}-${suffix}`;
+        suffix += 1;
+      }
+
+      await this.tmuxSessionManager.createSession(candidate, workspacePath);
+      await this.switchToTmuxSessionWithTool(candidate);
+
+      return candidate;
+    } catch (error) {
+      this.logger.error(
+        `[TerminalProvider] Failed to create tmux session: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      vscode.window.showErrorMessage("Failed to create tmux session");
+      return undefined;
+    }
+  }
+
+  public async createTmuxWindow(): Promise<void> {
+    if (!this.tmuxSessionManager || !this.selectedTmuxSessionId) {
+      return;
+    }
+    await this.tmuxSessionManager.createWindow(this.selectedTmuxSessionId);
+  }
+
+  public async navigateTmuxWindow(direction: "next" | "prev"): Promise<void> {
+    if (!this.tmuxSessionManager || !this.selectedTmuxSessionId) {
+      return;
+    }
+    if (direction === "next") {
+      await this.tmuxSessionManager.nextWindow(this.selectedTmuxSessionId);
+    } else {
+      await this.tmuxSessionManager.prevWindow(this.selectedTmuxSessionId);
+    }
+  }
+
+  public async splitTmuxPane(direction: "h" | "v"): Promise<void> {
+    if (!this.tmuxSessionManager) {
+      return;
+    }
+    const sessionId =
+      this.selectedTmuxSessionId ??
+      this.resolveTmuxSessionIdForInstance(this.activeInstanceId) ??
+      (await this.resolveFallbackTmuxSessionId());
+    if (!sessionId) {
+      return;
+    }
+    const panes = await this.tmuxSessionManager.listPanes(sessionId);
+    const activePane = panes.find((p) => p.isActive) ?? panes[0];
+    if (activePane) {
+      await this.tmuxSessionManager.splitPane(activePane.paneId, direction);
+    }
+  }
+
+  public async killTmuxPane(): Promise<void> {
+    if (!this.tmuxSessionManager) {
+      return;
+    }
+    const sessionId =
+      this.selectedTmuxSessionId ??
+      this.resolveTmuxSessionIdForInstance(this.activeInstanceId) ??
+      (await this.resolveFallbackTmuxSessionId());
+    if (!sessionId) {
+      return;
+    }
+    const panes = await this.tmuxSessionManager.listPanes(sessionId);
+    if (panes.length <= 1) {
+      return;
+    }
+    const activePane = panes.find((p) => p.isActive) ?? panes[0];
+    if (activePane) {
+      await this.tmuxSessionManager.killPane(activePane.paneId);
+    }
+  }
+
+  public async navigateTmuxSession(direction: "next" | "prev"): Promise<void> {
+    if (!this.tmuxSessionManager) {
+      return;
+    }
+    const sessions = await this.tmuxSessionManager.discoverSessions();
+    if (sessions.length === 0) {
+      return;
+    }
+    const currentIndex = sessions.findIndex(
+      (s) => s.id === this.selectedTmuxSessionId,
+    );
+    let targetIndex: number;
+    if (currentIndex === -1) {
+      targetIndex = 0;
+    } else if (direction === "next") {
+      targetIndex = (currentIndex + 1) % sessions.length;
+    } else {
+      targetIndex = (currentIndex - 1 + sessions.length) % sessions.length;
+    }
+    await this.switchToTmuxSession(sessions[targetIndex].id);
+  }
+
+  public async killTmuxSession(sessionId: string): Promise<void> {
+    if (!this.tmuxSessionManager) {
+      return;
+    }
+
+    try {
+      const activeTmuxSessionId = this.resolveTmuxSessionIdForInstance(
+        this.activeInstanceId,
+      );
+      const shouldFallbackToNative =
+        this.selectedTmuxSessionId === sessionId ||
+        activeTmuxSessionId === sessionId;
+      const fallbackWorkspacePath = shouldFallbackToNative
+        ? this.resolveWorkspacePathForTmuxFallback()
+        : undefined;
+
+      if (this.selectedTmuxSessionId === sessionId) {
+        this.selectedTmuxSessionId = undefined;
+      }
+
+      await this.tmuxSessionManager.killSession(sessionId);
+
+      if (this.instanceStore) {
+        const records = this.instanceStore.getAll();
+        for (const record of records) {
+          if (record.runtime.tmuxSessionId === sessionId) {
+            this.portManager.releaseTerminalPorts(record.config.id);
+            this.instanceStore.upsert({
+              ...record,
+              runtime: {
+                ...record.runtime,
+                tmuxSessionId: undefined,
+                port: undefined,
+              },
+            });
+          }
+        }
+      }
+
+      if (shouldFallbackToNative && this.isStarted) {
+        const replacementSessionId = fallbackWorkspacePath
+          ? await this.findReplacementTmuxSession(
+              fallbackWorkspacePath,
+              sessionId,
+            )
+          : undefined;
+        if (replacementSessionId) {
+          await this.switchToTmuxSession(replacementSessionId);
+          return;
+        }
+
+        await this.switchToNativeShell();
+      }
+    } catch (error) {
+      this.logger.error(
+        `[TerminalProvider] Failed to kill tmux session: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      vscode.window.showErrorMessage("Failed to kill tmux session");
+    }
+  }
+
+  public async routeDroppedTextToTmuxPane(
+    text: string,
+    dropCell: { col: number; row: number },
+  ): Promise<boolean> {
+    if (!this.tmuxSessionManager) {
+      return false;
+    }
+    const sessionId =
+      this.selectedTmuxSessionId ??
+      this.resolveTmuxSessionIdForInstance(this.activeInstanceId) ??
+      (await this.resolveFallbackTmuxSessionId());
+    if (!sessionId) {
+      return false;
+    }
+    try {
+      const panes =
+        await this.tmuxSessionManager.listVisiblePaneGeometry(sessionId);
+      const target = panes.find((p) => {
+        const right = p.paneLeft + p.paneWidth - 1;
+        const bottom = p.paneTop + p.paneHeight - 1;
+        return (
+          dropCell.col >= p.paneLeft &&
+          dropCell.col <= right &&
+          dropCell.row >= p.paneTop &&
+          dropCell.row <= bottom
+        );
+      });
+      if (!target) {
+        return false;
+      }
+      await this.tmuxSessionManager.selectPane(target.paneId);
+      await this.tmuxSessionManager.sendTextToPane(target.paneId, text, {
+        submit: false,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  public formatDroppedFiles(
+    paths: string[],
+    options: { useAtSyntax: boolean },
+  ): string {
+    const operator = this.activeTool
+      ? this.aiToolRegistry.getForConfig(this.activeTool)
+      : this.aiToolRegistry.getByToolName("opencode");
+    if (!operator) {
+      return paths.join(" ");
+    }
+
+    return operator.formatDroppedFiles(paths, options);
+  }
+
+  public formatFileReference(reference: AiToolFileReference): string {
+    const operator = this.activeTool
+      ? this.aiToolRegistry.getForConfig(this.activeTool)
+      : this.aiToolRegistry.getByToolName("opencode");
+    if (!operator) {
+      return reference.path;
+    }
+
+    return operator.formatFileReference(reference);
+  }
+
+  public formatPastedImage(tempPath: string): string | undefined {
+    const operator = this.activeTool
+      ? this.aiToolRegistry.getForConfig(this.activeTool)
+      : this.aiToolRegistry.getByToolName("opencode");
+    return operator?.formatPastedImage(tempPath);
+  }
+
+  private resolveWorkspacePathForTmuxFallback(): string | undefined {
+    const instanceWorkspacePath = this.resolveWorkspacePathFromActiveInstance();
+    if (instanceWorkspacePath) {
+      return instanceWorkspacePath;
+    }
+
+    return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  }
+
+  private async findReplacementTmuxSession(
+    workspacePath: string,
+    killedSessionId: string,
+  ): Promise<string | undefined> {
+    if (!this.tmuxSessionManager) {
+      return undefined;
+    }
+
+    try {
+      const replacement =
+        await this.tmuxSessionManager.findSessionForWorkspace(workspacePath);
+      if (!replacement || replacement.id === killedSessionId) {
+        return undefined;
+      }
+
+      return replacement.id;
+    } catch (error) {
+      this.logger.warn(
+        `[TerminalProvider] Failed to resolve replacement tmux session: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
+    }
+  }
+
+  public subscribeToActiveInstanceChanges(): void {
+    if (!this.instanceStore) {
+      return;
+    }
+
+    try {
+      this.activeInstanceId = this.instanceStore.getActive().config.id;
+    } catch {}
+
+    this.activeInstanceSubscription = this.instanceStore.onDidSetActive(
+      (id) => {
+        this.callbacks.onActiveInstanceChanged(id);
+      },
+    );
+  }
+
+  private syncActiveInstance(instanceId: InstanceId): void {
+    if (!this.instanceStore) {
+      return;
+    }
+    try {
+      const currentActive = this.instanceStore.getActive().config.id;
+      if (currentActive !== instanceId) {
+        this.instanceStore.setActive(instanceId);
+      }
+    } catch {}
+  }
+
+  private notifyActiveSession(sessionId: string | undefined): void {
+    if (!sessionId) {
+      this.stopClipboardSync();
+      this.callbacks.postMessage({ type: "activeSession" });
+      return;
+    }
+    this.startClipboardSync();
+    this.callbacks.postMessage({
+      type: "activeSession",
+      sessionName: sessionId,
+      sessionId,
+    });
+  }
+
+  private startClipboardSync(): void {
+    this.stopClipboardSync();
+    if (!this.tmuxSessionManager) {
+      return;
+    }
+    this.clipboardPollInterval = setInterval(async () => {
+      try {
+        const buf = await this.tmuxSessionManager!.showBuffer();
+        if (buf && buf !== this.lastTmuxBuffer) {
+          this.lastTmuxBuffer = buf;
+          await vscode.env.clipboard.writeText(buf);
+        }
+      } catch {}
+    }, 500);
+  }
+
+  private stopClipboardSync(): void {
+    if (this.clipboardPollInterval !== undefined) {
+      clearInterval(this.clipboardPollInterval);
+      this.clipboardPollInterval = undefined;
+    }
+  }
+
+  public dispose(): void {
+    this.stopClipboardSync();
+    this.disposeListeners();
+    this.activeInstanceSubscription?.dispose();
+    this.activeInstanceSubscription = undefined;
+    if (this.isStarted) {
+      this.terminalManager.killTerminal(this.activeInstanceId);
+    }
+  }
+
+  private async sendAutoContext(): Promise<void> {
+    if (this.autoContextSent) {
+      return;
+    }
+
+    const config = vscode.workspace.getConfiguration("opencodeTui");
+    const enableHttpApi = config.get<boolean>("enableHttpApi", true);
+    const autoShareContext = config.get<boolean>("autoShareContext", true);
+    const operator = this.activeTool
+      ? this.aiToolRegistry.getForConfig(this.activeTool)
+      : undefined;
+
+    if (!enableHttpApi) {
+      this.logger.info(
+        "[TerminalProvider] HTTP API disabled, skipping auto-context",
+      );
+      return;
+    }
+
+    if (!autoShareContext) {
+      this.logger.info(
+        "[TerminalProvider] Auto-context sharing disabled by user",
+      );
+      return;
+    }
+
+    if (!this.activeTool || !operator?.supportsAutoContext(this.activeTool)) {
+      this.logger.info(
+        "[TerminalProvider] Active tool does not support auto-context",
+      );
+      return;
+    }
+
+    if (!this.httpAvailable || !this.apiClient) {
+      this.logger.info(
+        "[TerminalProvider] HTTP not available, skipping auto-context",
+      );
+      return;
+    }
+
+    const context = this.contextSharingService.getCurrentContext();
+    if (!context) {
+      this.logger.info(
+        "[TerminalProvider] No active editor, skipping auto-context",
+      );
+      return;
+    }
+
+    const fileRef = this.formatFileReference({
+      path: context.filePath,
+      selectionStart: context.selectionStart,
+      selectionEnd: context.selectionEnd,
+    });
+    this.logger.info(`[TerminalProvider] Sending auto-context: ${fileRef}`);
+
+    try {
+      await this.apiClient.appendPrompt(fileRef);
+      this.autoContextSent = true;
+      this.logger.info(
+        "[TerminalProvider] Auto-context sent successfully via HTTP",
+      );
+    } catch (error) {
+      this.logger.error(
+        `[TerminalProvider] Failed to send auto-context: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  private getConfiguredTools(
+    config = vscode.workspace.getConfiguration("opencodeTui"),
+  ): AiToolConfig[] {
+    return resolveAiToolConfigs(config.get("aiTools", []));
+  }
+
+  private resolveStoredTool(
+    instanceId = this.activeInstanceId,
+  ): AiToolConfig | undefined {
+    const config = vscode.workspace.getConfiguration("opencodeTui");
+    const storedToolName =
+      this.instanceStore?.get(instanceId)?.config.selectedAiTool;
+    return this.resolveToolConfig(
+      storedToolName ?? config.get<string>("defaultAiTool", ""),
+      config,
+    );
+  }
+
+  private resolveToolConfig(
+    toolName: string | undefined,
+    config = vscode.workspace.getConfiguration("opencodeTui"),
+  ): AiToolConfig | undefined {
+    if (!toolName) {
+      return undefined;
+    }
+
+    return this.getConfiguredTools(config).find((tool) =>
+      this.aiToolRegistry.matchesName(tool, toolName),
+    );
+  }
+
+  private persistSelectedTool(
+    toolName: string | undefined,
+    instanceId = this.activeInstanceId,
+  ): void {
+    if (!this.instanceStore) {
+      return;
+    }
+
+    const record = this.instanceStore.get(instanceId);
+    if (!record) {
+      return;
+    }
+
+    this.instanceStore.upsert({
+      ...record,
+      config: {
+        ...record.config,
+        selectedAiTool: toolName,
+      },
+    });
+  }
+
+  private async resolveToolForStartup(
+    config: vscode.WorkspaceConfiguration,
+  ): Promise<AiToolConfig | undefined> {
+    const preferredToolName =
+      this.pendingLaunchToolName ??
+      this.instanceStore?.get(this.activeInstanceId)?.config.selectedAiTool ??
+      config.get<string>("defaultAiTool", "");
+
+    let tool = this.resolveToolConfig(preferredToolName, config);
+    if (!tool) {
+      const toolItems = this.getConfiguredTools(config).map((candidate) => ({
+        label: candidate.label,
+        description: `Launch ${candidate.label} in the terminal`,
+        tool: candidate,
+      }));
+      const picked = await vscode.window.showQuickPick(toolItems, {
+        placeHolder: "Select AI tool to launch",
+      });
+      if (!picked) {
+        return undefined;
+      }
+      tool = picked.tool;
+      await config.update(
+        "defaultAiTool",
+        picked.tool.name,
+        vscode.ConfigurationTarget.Global,
+      );
+    }
+
+    this.persistSelectedTool(tool.name);
+    return tool;
+  }
+}

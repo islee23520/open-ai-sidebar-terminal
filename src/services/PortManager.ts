@@ -12,7 +12,7 @@
  * - Coordination with InstanceStore for cross-instance port conflict detection
  */
 
-import type { InstanceStore } from './InstanceStore';
+import type { InstanceStore } from "./InstanceStore";
 
 export class PortManager {
   // Ephemeral port range (16384-65535)
@@ -214,9 +214,9 @@ export class PortManager {
     if (!this.instanceStore) {
       return false;
     }
-    
+
     const instances = this.instanceStore.getAll();
-    return instances.some(instance => instance.runtime.port === port);
+    return instances.some((instance) => instance.runtime.port === port);
   }
 
   /**
@@ -266,6 +266,3 @@ export class PortManager {
     );
   }
 }
-
-// Export singleton instance
-export const portManager = new PortManager();
