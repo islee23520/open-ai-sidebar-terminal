@@ -9,11 +9,17 @@ import { ContextSharingService } from "../services/ContextSharingService";
 import { OutputChannelService } from "../services/OutputChannelService";
 import { InstanceId, InstanceStore } from "../services/InstanceStore";
 import { TmuxSessionManager } from "../services/TmuxSessionManager";
+import { AiToolFileReference } from "../services/aiTools/AiToolOperator";
 import {
-  OpenCodeMessageRouter,
-  OpenCodeMessageRouterProviderBridge,
-} from "./opencode/OpenCodeMessageRouter";
-import { OpenCodeSessionRuntime } from "./opencode/OpenCodeSessionRuntime";
+  AiToolConfig,
+  resolveAiToolConfigs,
+} from "../types";
+import { AiToolOperatorRegistry } from "../services/aiTools/AiToolOperatorRegistry";
+import {
+  MessageRouter,
+  MessageRouterProviderBridge,
+} from "./MessageRouter";
+import { SessionRuntime } from "./SessionRuntime";
 
 export class TerminalProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "opencodeTui";
@@ -21,8 +27,9 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
   private _view?: vscode.WebviewView;
   private readonly contextSharingService: ContextSharingService;
   private readonly logger = OutputChannelService.getInstance();
-  private readonly sessionRuntime: OpenCodeSessionRuntime;
-  private readonly messageRouter: OpenCodeMessageRouter;
+  private readonly aiToolRegistry: AiToolOperatorRegistry;
+  private readonly sessionRuntime: SessionRuntime;
+  private readonly messageRouter: MessageRouter;
 
   public constructor(
     private readonly context: vscode.ExtensionContext,
@@ -33,8 +40,9 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
     private readonly tmuxSessionManager?: TmuxSessionManager,
   ) {
     this.contextSharingService = new ContextSharingService();
+    this.aiToolRegistry = new AiToolOperatorRegistry();
 
-    this.sessionRuntime = new OpenCodeSessionRuntime(
+    this.sessionRuntime = new SessionRuntime(
       this.terminalManager,
       this.captureManager,
       undefined,
@@ -43,6 +51,7 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
       this.instanceStore,
       this.logger,
       this.contextSharingService,
+      this.aiToolRegistry,
       {
         postMessage: (message) => this.postWebviewMessage(message),
         onActiveInstanceChanged: (instanceId) => {
@@ -52,11 +61,14 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
       },
     );
 
-    const routerBridge: OpenCodeMessageRouterProviderBridge = {
+    const routerBridge: MessageRouterProviderBridge = {
       startOpenCode: () => this.startOpenCode(),
       switchToTmuxSession: (sessionId) => this.switchToTmuxSession(sessionId),
       killTmuxSession: (sessionId) => this.killTmuxSession(sessionId),
       createTmuxSession: () => this.createTmuxSession(),
+      createTmuxWindow: () => this.createTmuxWindow(),
+      navigateTmuxWindow: (direction) => this.navigateTmuxWindow(direction),
+      navigateTmuxSession: (direction) => this.navigateTmuxSession(direction),
       switchToNativeShell: () => this.switchToNativeShell(),
       pasteText: (text) => this.pasteText(text),
       getActiveInstanceId: () => this.getActiveInstanceId(),
@@ -67,9 +79,19 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
       resizeActiveTerminal: (cols, rows) =>
         this.resizeActiveTerminal(cols, rows),
       postWebviewMessage: (message) => this.postWebviewMessage(message),
+      routeDroppedTextToTmuxPane: (text, dropCell) =>
+        this.sessionRuntime.routeDroppedTextToTmuxPane(text, dropCell),
+      formatDroppedFiles: (paths, useAtSyntax) =>
+        this.sessionRuntime.formatDroppedFiles(paths, { useAtSyntax }),
+      formatPastedImage: (tempPath) =>
+        this.sessionRuntime.formatPastedImage(tempPath),
+      launchAiTool: (sessionId, toolName, savePreference) =>
+        this.launchAiTool(sessionId, toolName, savePreference),
+      showAiToolSelector: (sessionId, sessionName) =>
+        Promise.resolve(this.showAiToolSelector(sessionId, sessionName)),
     };
 
-    this.messageRouter = new OpenCodeMessageRouter(
+    this.messageRouter = new MessageRouter(
       routerBridge,
       this.context,
       this.terminalManager,
@@ -159,6 +181,29 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
     this.postWebviewMessage({ type: "focusTerminal" });
   }
 
+  public formatFileReference(reference: AiToolFileReference): string {
+    return this.sessionRuntime.formatFileReference(reference);
+  }
+
+  public formatUriReference(uri: vscode.Uri): string {
+    return this.formatFileReference({
+      path: vscode.workspace.asRelativePath(uri, false),
+    });
+  }
+
+  public formatEditorReference(editor: vscode.TextEditor): string {
+    const relativePath = vscode.workspace.asRelativePath(
+      editor.document.uri,
+      false,
+    );
+    const selection = editor.selection;
+    return this.formatFileReference({
+      path: relativePath,
+      selectionStart: selection.isEmpty ? undefined : selection.start.line + 1,
+      selectionEnd: selection.isEmpty ? undefined : selection.end.line + 1,
+    });
+  }
+
   public pasteText(text: string): void {
     this.postWebviewMessage({
       type: "clipboardContent",
@@ -193,12 +238,28 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
     await this.sessionRuntime.switchToTmuxSession(sessionId);
   }
 
+  public resolveInstanceIdFromSessionId(sessionId: string): InstanceId {
+    return this.sessionRuntime.resolveInstanceIdFromSessionId(sessionId);
+  }
+
   public async switchToNativeShell(): Promise<void> {
     await this.sessionRuntime.switchToNativeShell();
   }
 
   public async createTmuxSession(): Promise<string | undefined> {
     return this.sessionRuntime.createTmuxSession();
+  }
+
+  public async createTmuxWindow(): Promise<void> {
+    await this.sessionRuntime.createTmuxWindow();
+  }
+
+  public async navigateTmuxWindow(direction: "next" | "prev"): Promise<void> {
+    await this.sessionRuntime.navigateTmuxWindow(direction);
+  }
+
+  public async navigateTmuxSession(direction: "next" | "prev"): Promise<void> {
+    await this.sessionRuntime.navigateTmuxSession(direction);
   }
 
   public async killTmuxSession(sessionId: string): Promise<void> {
@@ -221,8 +282,76 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
     this.terminalManager.writeToTerminal(this.activeInstanceId, prompt);
   }
 
+  public async launchAiTool(
+    sessionId: string,
+    toolName: string,
+    savePreference: boolean,
+  ): Promise<void> {
+    if (savePreference) {
+      const config = vscode.workspace.getConfiguration("opencodeTui");
+      await config.update(
+        "defaultAiTool",
+        toolName,
+        vscode.ConfigurationTarget.Global,
+      );
+    }
+
+    if (!this.tmuxSessionManager) {
+      return;
+    }
+
+    const tool = this.sessionRuntime.resolveToolByName(toolName);
+    if (!tool) {
+      return;
+    }
+
+    const instanceId = this.sessionRuntime.resolveInstanceIdFromSessionId(
+      sessionId,
+    );
+    this.sessionRuntime.rememberSelectedTool(tool.name, instanceId);
+
+    try {
+      const panes = await this.tmuxSessionManager.listPanes(sessionId);
+      const targetPane = panes.find((p) => p.isActive) ?? panes[0];
+      if (targetPane) {
+        const operator = this.aiToolRegistry.getForConfig(tool);
+        await this.tmuxSessionManager.sendTextToPane(
+          targetPane.paneId,
+          operator.getLaunchCommand(tool),
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `[TerminalProvider] Failed to launch AI tool: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   private handleMessage(message: unknown): void {
     this.messageRouter.handleMessage(message);
+  }
+
+  /**
+   * Shows the AI tool selector in the terminal webview.
+   */
+  public showAiToolSelector(sessionId: string, sessionName: string): void {
+    const config = vscode.workspace.getConfiguration("opencodeTui");
+    const instanceId = this.sessionRuntime.resolveInstanceIdFromSessionId(
+      sessionId,
+    );
+    const defaultToolName =
+      this.instanceStore?.get(instanceId)?.config.selectedAiTool ??
+      config.get<string>("defaultAiTool", "opencode");
+    const tools: AiToolConfig[] = resolveAiToolConfigs(
+      config.get("aiTools", []),
+    );
+    this.postWebviewMessage({
+      type: "showAiToolSelector",
+      sessionId,
+      sessionName,
+      defaultTool: defaultToolName,
+      tools,
+    });
   }
 
   private resizeActiveTerminal(cols: number, rows: number): void {
