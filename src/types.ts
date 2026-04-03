@@ -103,6 +103,7 @@ export type NativeShellDto = {
 
 export type TmuxDashboardActionMessage =
   | { action: "refresh" }
+  | { action: "toggleScope" }
   | { action: "create" }
   | { action: "createNativeShell" }
   | { action: "switchNativeShell" }

@@ -163,6 +163,9 @@ describe("TmuxSessionManager", () => {
       {
         stdout: "",
       },
+      {
+        stdout: "",
+      },
     ]);
 
     const result = await manager.ensureSession("repo-a", "/workspaces/repo-a");
@@ -176,7 +179,7 @@ describe("TmuxSessionManager", () => {
         isActive: true,
       },
     });
-    expect(execFile).toHaveBeenCalledTimes(2);
+    expect(execFile).toHaveBeenCalledTimes(3);
     expect(vi.mocked(execFile).mock.calls[1]?.[1]).toEqual([
       "new-session",
       "-d",
@@ -200,6 +203,9 @@ describe("TmuxSessionManager", () => {
       {
         stdout: "",
       },
+      {
+        stdout: "",
+      },
     ]);
 
     const result = await manager.ensureSession("repo-c", "/workspaces/repo-c");
@@ -213,7 +219,7 @@ describe("TmuxSessionManager", () => {
         isActive: true,
       },
     });
-    expect(execFile).toHaveBeenCalledTimes(2);
+    expect(execFile).toHaveBeenCalledTimes(3);
     expect(vi.mocked(execFile).mock.calls[1]?.[1]).toEqual([
       "new-session",
       "-d",

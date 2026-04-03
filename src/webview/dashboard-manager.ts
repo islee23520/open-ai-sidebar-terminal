@@ -114,6 +114,17 @@ function render(payload: DashboardPayload): void {
     (payload.workspace || "-") +
     (payload.showingAll ? " (all)" : "");
 
+  const toggleBtn = document.getElementById("toggle-scope");
+  if (toggleBtn) {
+    if (payload.showingAll) {
+      toggleBtn.classList.add("active-scope");
+      toggleBtn.textContent = "Workspace";
+    } else {
+      toggleBtn.classList.remove("active-scope");
+      toggleBtn.textContent = "Global";
+    }
+  }
+
   const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
   const windows = payload.windows || {};
   const activeOther = sessions.find(
@@ -183,7 +194,6 @@ function render(payload: DashboardPayload): void {
                 })
                 .join("");
 
-              list.innerHTML = nativeShellCardsHtml + tmuxCardsHtml;
               return `<div class="window-card${wActive}" data-session-id="${escapeHtml(s.id)}" data-window-id="${escapeHtml(w.windowId)}"><div class="window-row"><button class="window-select-btn" data-action="selectWindow" data-session-id="${escapeHtml(s.id)}" data-window-id="${escapeHtml(w.windowId)}">${escapeHtml(w.name)}</button><span class="window-index">${w.index}</span><button class="danger pane-kill-btn" data-action="killWindow" data-session-id="${escapeHtml(s.id)}" data-window-id="${escapeHtml(w.windowId)}" title="Kill Window">✕</button></div><div class="pane-list">${panesHtml}</div></div>`;
             })
             .join("")}</div>`
@@ -217,6 +227,8 @@ function render(payload: DashboardPayload): void {
       ].join("");
     })
     .join("");
+
+  list.innerHTML = nativeShellCardsHtml + tmuxCardsHtml;
 }
 
 function showAiToolSelector(
@@ -476,7 +488,8 @@ document.addEventListener("click", (event) => {
     action === "refresh" ||
     action === "create" ||
     action === "switchNativeShell" ||
-    action === "createNativeShell"
+    action === "createNativeShell" ||
+    action === "toggleScope"
   ) {
     vscode.postMessage({ action });
     return;

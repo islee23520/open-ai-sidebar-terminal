@@ -135,19 +135,7 @@ export class TerminalManager {
   writeToTerminal(id: string, data: string): void {
     const terminal = this.terminals.get(id);
     if (terminal) {
-      const preview = data.length > 80 ? data.slice(0, 80) + "..." : data;
-      console.log(
-        `[DIAG:writeToTerminal] id="${id}" instanceId="${terminal.instanceId}" port=${terminal.port} hasPty=${!!terminal.process} data="${preview}"`,
-      );
       terminal.process.write(data);
-    } else {
-      console.log(
-        `[DIAG:writeToTerminal] MISS — id="${id}" not found. Known terminals: [${Array.from(this.terminals.keys()).join(", ")}] instanceMap: [${Array.from(
-          this.instanceToTerminal.entries(),
-        )
-          .map(([k, v]) => `${k}→${v}`)
-          .join(", ")}]`,
-      );
     }
   }
 

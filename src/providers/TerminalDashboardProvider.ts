@@ -29,6 +29,8 @@ export class TerminalDashboardProvider
   private pollTimer?: ReturnType<typeof setInterval>;
   private pendingMessage?: TmuxDashboardHostMessage;
   private static readonly POLL_INTERVAL_MS = 3000;
+  private static readonly HTML_VERSION = 16;
+  private showAllSessions = false;
 
   /**
    * @param context Extension context
@@ -128,18 +130,12 @@ export class TerminalDashboardProvider
         ? sessions.filter((session) => session.workspace === workspaceName)
         : sessions;
 
-      // Fallback: if workspace filter yields 0 but sessions exist, show all
-      let showAllFallback = false;
-      if (filtered.length === 0 && sessions.length > 0 && workspaceName) {
+      if (this.showAllSessions) {
         filtered = sessions;
-        showAllFallback = true;
-        this.outputChannel?.appendLine(
-          `[TerminalDashboard] No sessions matched workspace '${workspaceName}', showing all ${sessions.length} sessions`,
-        );
       }
 
       this.outputChannel?.appendLine(
-        `[TerminalDashboard] Filtered to ${filtered.length} sessions${showAllFallback ? " (fallback: all)" : ""}`,
+        `[TerminalDashboard] Filtered to ${filtered.length} sessions${this.showAllSessions ? " (global)" : ""}`,
       );
 
       const panesMap: Record<string, TmuxDashboardPaneDto[]> = {};
@@ -177,7 +173,9 @@ export class TerminalDashboardProvider
         config.get("aiTools", []),
       );
 
-      const nativeShells = this.buildNativeShellDtos(workspacePath);
+      const nativeShells = this.buildNativeShellDtos(
+        this.showAllSessions ? undefined : workspacePath,
+      );
 
       const message: TmuxDashboardHostMessage = {
         type: "updateTmuxSessions",
@@ -186,7 +184,7 @@ export class TerminalDashboardProvider
         workspace: workspaceName ?? "No workspace",
         panes: panesMap,
         windows: windowsMap,
-        showingAll: showAllFallback || undefined,
+        showingAll: this.showAllSessions || undefined,
         tools,
       };
 
@@ -229,6 +227,10 @@ export class TerminalDashboardProvider
       case "refresh":
         await this.postSessionsToWebview();
         return;
+      case "toggleScope":
+        this.showAllSessions = !this.showAllSessions;
+        await this.postSessionsToWebview();
+        return;
       case "activate":
         await vscode.commands.executeCommand(
           "opencodeTui.switchTmuxSession",
@@ -261,15 +263,19 @@ export class TerminalDashboardProvider
             : undefined;
 
           if (this.instanceStore) {
+            const shellCount = this.instanceStore
+              .getAll()
+              .filter((r) => !r.runtime.tmuxSessionId).length;
             this.instanceStore.upsert({
               config: {
                 id: newId,
                 workspaceUri,
-                label: `Shell ${this.instanceStore.getAll().filter((r) => !r.runtime.tmuxSessionId).length + 1}`,
+                label: `Shell ${shellCount + 1}`,
               },
               runtime: {},
               state: "disconnected",
             });
+            this.instanceStore.setActive(newId);
           }
 
           await vscode.commands.executeCommand("opencodeTui.switchNativeShell");
@@ -418,12 +424,11 @@ export class TerminalDashboardProvider
    * @param webview The webview to generate HTML for
    * @returns The HTML string
    */
-  private static readonly HTML_VERSION = 13;
-
   private getHtmlContent(webview: vscode.Webview): string {
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, "dist", "dashboard.js"),
     );
+    const versionedScript = `${scriptUri}?v=${TerminalDashboardProvider.HTML_VERSION}`;
 
     const nonce = this.getNonce();
 
@@ -518,6 +523,11 @@ export class TerminalDashboardProvider
     button.primary {
       background: var(--vscode-button-background);
       color: var(--vscode-button-foreground);
+    }
+    button.active-scope {
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border-color: var(--vscode-focusBorder);
     }
     button.danger {
       background: transparent;
@@ -812,6 +822,7 @@ export class TerminalDashboardProvider
     <div class="header-actions">
       <button id="create" class="primary" data-action="create" title="Create new tmux session">New tmux</button>
       <button id="native-shell" data-action="createNativeShell" title="Create new native shell">New shell</button>
+      <button id="toggle-scope" data-action="toggleScope" title="Toggle between workspace and global view">Global</button>
       <button id="refresh" data-action="refresh" title="Refresh session list">Refresh</button>
     </div>
   </div>
@@ -834,7 +845,7 @@ export class TerminalDashboardProvider
     </div>
   </div>
 
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <script nonce="${nonce}" src="${versionedScript}"></script>
 </body>
 </html>`;
   }
