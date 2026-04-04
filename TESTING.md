@@ -41,10 +41,10 @@ Option B: Via VS Code UI
 
 2. **Verify auto-start**
    - OpenCode should start automatically
-   - You should see the OpenCode TUI interface
+   - You should see the Open AI Sidebar Terminal interface
 
 3. **Test commands**
-   - Try: `OpenCode TUI: Clear Terminal`
+   - Try: `Open AI Sidebar Terminal: Clear Terminal`
 
 4. **Test terminal interaction**
    - Type commands in the terminal

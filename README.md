@@ -3,7 +3,7 @@
 [![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/islee23520.opencode-sidebar-tui?logo=visual-studio-code&label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=islee23520.opencode-sidebar-tui)
 [![Open VSX](https://img.shields.io/open-vsx/v/islee23520/opencode-sidebar-tui?logo=open-vsx&label=Open%20VSX)](https://open-vsx.org/extension/islee23520/opencode-sidebar-tui)
 
-Automatically render OpenCode TUI in VS Code sidebar with full terminal support.
+Automatically render Open AI Sidebar Terminal in VS Code sidebar with full terminal support.
 
 ## Features
 
@@ -102,16 +102,16 @@ npx @vscode/vsce package
 ## Usage
 
 1. Click the OpenCode icon in the Activity Bar (sidebar) to open Terminal Managers
-2. The OpenCode TUI terminal is available in the secondary sidebar
-3. OpenCode TUI automatically starts when the terminal view is activated
+2. The Open AI Sidebar Terminal terminal is available in the secondary sidebar
+3. Open AI Sidebar Terminal automatically starts when the terminal view is activated
 4. Interact with OpenCode directly in the sidebar
 
 ## Commands
 
 ### Basic Commands
 
-- **OpenCode TUI: Start OpenCode** - Manually start OpenCode
-- **OpenCode TUI: Paste** - Paste text into the terminal
+- **Open AI Sidebar Terminal: Start OpenCode** - Manually start OpenCode
+- **Open AI Sidebar Terminal: Paste** - Paste text into the terminal
 
 ### File Reference Commands
 
@@ -376,7 +376,7 @@ src/
 
 ## Implementation Details
 
-Based on the excellent [vscode-sidebar-terminal](https://github.com/s-hiraoku/vscode-sidebar-terminal) extension, streamlined specifically for OpenCode TUI:
+Based on the excellent [vscode-sidebar-terminal](https://github.com/s-hiraoku/vscode-sidebar-terminal) extension, streamlined specifically for Open AI Sidebar Terminal:
 
 - **Terminal Backend**: node-pty for PTY support
 - **Terminal Frontend**: xterm.js with WebGL rendering

@@ -53,10 +53,11 @@ export class SessionRuntime {
   private clipboardPollInterval?: ReturnType<typeof setInterval>;
   private lastTmuxBuffer = "";
   private sigusr2Handler?: () => void;
-  private knownPaneCounts: Map<string, number> = new Map();
+  private knownPaneIds: Map<string, Set<string>> = new Map();
+  private knownPaneCommands: Map<string, string> = new Map();
+  private sigusr2FiredSinceLastCheck = false;
   private externalChangeListener?: vscode.Disposable;
   private paneMonitorInterval?: ReturnType<typeof setInterval>;
-  private knownPaneCommands: Map<string, string> = new Map();
 
   public constructor(
     private readonly terminalManager: TerminalManager,
@@ -1070,7 +1071,10 @@ export class SessionRuntime {
     // Cache initial pane count and active pane commands
     try {
       const panes = await this.tmuxSessionManager.listPanes(sessionId);
-      this.knownPaneCounts.set(sessionId, panes.length);
+      this.knownPaneIds.set(
+        sessionId,
+        new Set(panes.map((p) => p.paneId)),
+      );
       const activePane = panes.find((p) => p.isActive);
       if (activePane?.paneId) {
         this.knownPaneCommands.set(
@@ -1085,6 +1089,7 @@ export class SessionRuntime {
     // SIGUSR2 for immediate detection (from tmux hooks)
     if (!this.sigusr2Handler) {
       this.sigusr2Handler = () => {
+    this.sigusr2FiredSinceLastCheck = true;
         void this.checkPaneChanges();
       };
       process.on("SIGUSR2", this.sigusr2Handler);
@@ -1097,7 +1102,7 @@ export class SessionRuntime {
     ) {
       this.externalChangeListener =
         this.tmuxSessionManager.onExternalPaneChange(() => {
-          void this.checkPaneChanges();
+      this.sigusr2FiredSinceLastCheck = true;
         });
     }
 
@@ -1122,8 +1127,7 @@ export class SessionRuntime {
       clearInterval(this.paneMonitorInterval);
       this.paneMonitorInterval = undefined;
     }
-    this.knownPaneCounts.clear();
-    this.knownPaneCommands.clear();
+    this.knownPaneIds.clear();
   }
 
   private async checkPaneChanges(): Promise<void> {
@@ -1153,46 +1157,66 @@ export class SessionRuntime {
 
     try {
       const panes = await this.tmuxSessionManager.listPanes(activeSessionId);
-      const currentCount = panes.length;
-      const previousCount = this.knownPaneCounts.get(activeSessionId);
+      const currentPaneIds = new Set(panes.map((p) => p.paneId));
+      const previousPaneIds = this.knownPaneIds.get(activeSessionId);
 
-      // Detect new pane/window creation
-      if (previousCount !== undefined && currentCount > previousCount) {
-        this.knownPaneCounts.set(activeSessionId, currentCount);
-        // Cache commands for all panes
-        for (const pane of panes) {
-          this.knownPaneCommands.set(
-            `${activeSessionId}:${pane.paneId}`,
-            pane.currentCommand ?? "",
-          );
-        }
-        this.callbacks.showAiToolSelector(
-          activeSessionId,
-          activeSessionId,
-          true,
-        );
-        return;
-      }
-
-      this.knownPaneCounts.set(activeSessionId, currentCount);
-
-      // Detect AI tool exit → native shell
-      const activePane = panes.find((p) => p.isActive);
-      if (activePane) {
-        const key = `${activeSessionId}:${activePane.paneId}`;
-        const prevCmd = this.knownPaneCommands.get(key) ?? "";
-        const curCmd = activePane.currentCommand ?? "";
-
-        this.knownPaneCommands.set(key, curCmd);
-
-        // Trigger if the tool was running but now it's a plain shell
-        if (prevCmd && prevCmd !== curCmd && this.isPlainShell(curCmd)) {
+      // If a tmux event occurred since last check, something changed — always check
+      // If not, rely on state comparison (catches polling-only cases)
+      if (this.sigusr2FiredSinceLastCheck) {
+        this.sigusr2FiredSinceLastCheck = false;
+        const activePane = panes.find((p) => p.isActive);
+        if (activePane && this.isPlainShell(activePane.currentCommand ?? "")) {
           this.callbacks.showAiToolSelector(
             activeSessionId,
             activeSessionId,
             true,
           );
         }
+        return;
+      }
+      let shouldShowSelector = false;
+
+      if (previousPaneIds) {
+        for (const pane of panes) {
+          const key = `${activeSessionId}:${pane.paneId}`;
+          const prevCmd = this.knownPaneCommands.get(key);
+          const curCmd = pane.currentCommand ?? "";
+          const isNewPane = !previousPaneIds.has(pane.paneId);
+
+          // Case 1: Brand new pane ID (split, new window, fresh create)
+          if (isNewPane) {
+            shouldShowSelector = true;
+            break;
+          }
+
+          // Case 2: Existing pane ID but tool is gone
+          // Covers: kill+recreate with same ID, tool exit/crash
+          // Only trigger if a non-shell tool was previously running
+          if (
+            prevCmd !== undefined &&
+            prevCmd !== curCmd &&
+            !this.isPlainShell(prevCmd) &&
+            (curCmd === "" || this.isPlainShell(curCmd))
+          ) {
+            shouldShowSelector = true;
+            break;
+          }
+        }
+      }
+
+      // Always update tracking state
+      this.knownPaneIds.set(activeSessionId, currentPaneIds);
+      for (const pane of panes) {
+        const key = `${activeSessionId}:${pane.paneId}`;
+        this.knownPaneCommands.set(key, pane.currentCommand ?? "");
+      }
+
+      if (shouldShowSelector) {
+        this.callbacks.showAiToolSelector(
+          activeSessionId,
+          activeSessionId,
+          true,
+        );
       }
     } catch {
       // Silently ignore — polling is best-effort
