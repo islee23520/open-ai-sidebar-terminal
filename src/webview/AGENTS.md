@@ -41,4 +41,4 @@ Browser-sandbox code. xterm.js rendering, DOM events, host messaging via `acquir
 Webpack produces 2 webview bundles:
 
 - `dist/webview.js` — `src/webview/main.ts` entry (xterm terminal)
-- `dist/dashboard.js` — `src/webview/dashboard-manager.ts` entry (Terminal Manager dashboard)
+- `dist/dashboard.js` — `src/webview/dashboard-manager.tsx` entry (Terminal Manager dashboard)

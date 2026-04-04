@@ -37,9 +37,16 @@ export interface MessageRouterProviderBridge {
     sessionId: string,
     toolName: string,
     savePreference: boolean,
+    targetPaneId?: string,
   ): Promise<void>;
-  showAiToolSelector(sessionId: string, sessionName: string, forceShow?: boolean): Promise<void>;
-  splitTmuxPane(direction: "h" | "v"): Promise<void>;
+  showAiToolSelector(
+    sessionId: string,
+    sessionName: string,
+    forceShow?: boolean,
+    targetPaneId?: string,
+  ): Promise<void>;
+  splitTmuxPane(direction: "h" | "v"): Promise<string | undefined>;
+  zoomTmuxPane(): Promise<void>;
   killTmuxPane(): Promise<void>;
   getSelectedTmuxSessionId(): string | undefined;
 }
@@ -161,17 +168,28 @@ export class MessageRouter {
           message.sessionId,
           message.tool,
           message.savePreference,
+          message.targetPaneId,
         );
         break;
       case "splitTmuxPane":
         if (message.direction === "h" || message.direction === "v") {
-          void this.provider.splitTmuxPane(message.direction).then(() => {
-            const sessionId = this.provider.getSelectedTmuxSessionId();
-            if (sessionId) {
-              void this.provider.showAiToolSelector(sessionId, sessionId, true);
-            }
-          });
+          void this.provider
+            .splitTmuxPane(message.direction)
+            .then((newPaneId) => {
+              const sessionId = this.provider.getSelectedTmuxSessionId();
+              if (sessionId) {
+                void this.provider.showAiToolSelector(
+                  sessionId,
+                  sessionId,
+                  true,
+                  newPaneId,
+                );
+              }
+            });
         }
+        break;
+      case "zoomTmuxPane":
+        void this.provider.zoomTmuxPane();
         break;
       case "killTmuxPane":
         void this.provider.killTmuxPane();

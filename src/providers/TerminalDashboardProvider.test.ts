@@ -57,6 +57,9 @@ describe("TerminalDashboardProvider", () => {
       listPanes,
       listWindows,
       selectPane: vi.fn().mockResolvedValue(undefined),
+      splitPane: vi.fn().mockResolvedValue("%8"),
+      createWindow: vi.fn().mockResolvedValue({ windowId: "@1", paneId: "%8" }),
+      captureSessionPreview: vi.fn().mockResolvedValue(""),
       onPaneChanged: onPaneChangedEvent.event,
     } as unknown as TmuxSessionManager;
 
@@ -80,6 +83,16 @@ describe("TerminalDashboardProvider", () => {
       .calls[0]?.[0] as (message: unknown) => Promise<void>;
 
     return { view, messageHandler };
+  }
+
+  function showProvider(provider: TerminalDashboardProvider) {
+    provider.show();
+    const panel = vi.mocked(vscode.window.createWebviewPanel).mock.results[0]
+      ?.value as ReturnType<typeof vscode.window.createWebviewPanel>;
+    const messageHandler = vi.mocked(panel.webview.onDidReceiveMessage).mock
+      .calls[0]?.[0] as (message: unknown) => Promise<void>;
+
+    return { panel, messageHandler };
   }
 
   /**
@@ -117,6 +130,7 @@ describe("TerminalDashboardProvider", () => {
             workspace: "repo-a",
             isActive: true,
             paneCount: 0,
+            preview: "",
           },
         ],
         nativeShells: [],
@@ -195,6 +209,7 @@ describe("TerminalDashboardProvider", () => {
             workspace: "repo-a",
             isActive: false,
             paneCount: 0,
+            preview: "",
           },
         ],
         nativeShells: [],
@@ -246,5 +261,110 @@ describe("TerminalDashboardProvider", () => {
     });
 
     expect(selectPane).toHaveBeenCalledWith("%3", "@2");
+  });
+
+  it("uses the active pane cwd when splitting from the dashboard", async () => {
+    const discoverSessions = vi.fn().mockResolvedValue([
+      {
+        id: "repo-a",
+        name: "repo-a",
+        workspace: "repo-a",
+        isActive: true,
+      },
+    ]);
+    const listPanes = vi.fn().mockResolvedValue([
+      {
+        paneId: "%7",
+        index: 0,
+        title: "shell",
+        isActive: true,
+        currentPath: "/workspaces/repo-a/packages/app",
+      },
+    ]);
+    const listWindows = vi.fn().mockResolvedValue([]);
+    const { provider, tmuxSessionManager } = createProvider(
+      discoverSessions,
+      listPanes,
+      listWindows,
+    );
+    const splitPane = vi.mocked(tmuxSessionManager.splitPane);
+    splitPane.mockResolvedValue("%8");
+    const { messageHandler } = resolveProvider(provider);
+    await flushPromises();
+
+    await messageHandler({
+      action: "splitPane",
+      sessionId: "repo-a",
+      direction: "h",
+    });
+
+    expect(splitPane).toHaveBeenCalledWith("%7", "h", {
+      workingDirectory: "/workspaces/repo-a/packages/app",
+    });
+  });
+
+  it("opens the dashboard as a webview panel and reveals existing panel", async () => {
+    const { provider } = createProvider();
+
+    provider.show();
+    provider.show();
+
+    expect(vscode.window.createWebviewPanel).toHaveBeenCalledTimes(1);
+    expect(vscode.window.createWebviewPanel).toHaveBeenCalledWith(
+      "opencodeTui.terminalDashboard",
+      "Terminal Manager",
+      {
+        preserveFocus: true,
+        viewColumn: vscode.ViewColumn.Beside,
+      },
+      expect.objectContaining({
+        enableScripts: true,
+        retainContextWhenHidden: true,
+      }),
+    );
+
+    const panel = vi.mocked(vscode.window.createWebviewPanel).mock.results[0]
+      ?.value as ReturnType<typeof vscode.window.createWebviewPanel>;
+
+    expect(panel.reveal).toHaveBeenCalledWith(vscode.ViewColumn.Beside, true);
+  });
+
+  it("posts workspace-filtered tmux sessions to the panel webview", async () => {
+    const { provider } = createProvider(
+      vi.fn().mockResolvedValue([
+        {
+          id: "repo-a",
+          name: "repo-a",
+          workspace: "repo-a",
+          isActive: true,
+        },
+        {
+          id: "repo-b",
+          name: "repo-b",
+          workspace: "repo-b",
+          isActive: false,
+        },
+      ]),
+    );
+
+    const { panel } = showProvider(provider);
+    await flushPromises();
+
+    expect(panel.webview.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "updateTmuxSessions",
+        workspace: "repo-a",
+        sessions: [
+          {
+            id: "repo-a",
+            name: "repo-a",
+            workspace: "repo-a",
+            isActive: true,
+            paneCount: 0,
+            preview: "",
+          },
+        ],
+      }),
+    );
   });
 });

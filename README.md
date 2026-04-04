@@ -2,8 +2,11 @@
 
 [![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/islee23520.opencode-sidebar-tui?logo=visual-studio-code&label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=islee23520.opencode-sidebar-tui)
 [![Open VSX](https://img.shields.io/open-vsx/v/islee23520/opencode-sidebar-tui?logo=open-vsx&label=Open%20VSX)](https://open-vsx.org/extension/islee23520/opencode-sidebar-tui)
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-pink?logo=githubsponsors)](https://github.com/sponsors/islee23520)
 
 Automatically render Open AI Sidebar Terminal in VS Code sidebar with full terminal support.
+
+If this project helps your workflow, you can [support it on GitHub Sponsors](https://github.com/sponsors/islee23520).
 
 ## Features
 

@@ -365,6 +365,17 @@ describe("TmuxSessionManager", () => {
       ]);
     });
 
+    it("zooms a pane", async () => {
+      mockExecSequence([{ stdout: "" }]);
+      await manager.zoomPane("%0");
+      expect(vi.mocked(execFile).mock.calls[0]?.[1]).toEqual([
+        "resize-pane",
+        "-Z",
+        "-t",
+        "%0",
+      ]);
+    });
+
     it("swaps two panes", async () => {
       mockExecSequence([{ stdout: "" }]);
       await manager.swapPanes("%0", "%1");
@@ -378,12 +389,18 @@ describe("TmuxSessionManager", () => {
     });
 
     it("creates a new window in a session", async () => {
-      mockExecSequence([{ stdout: "" }]);
-      await manager.createWindow("test-session");
+      mockExecSequence([{ stdout: "@1:%3" }]);
+      await expect(manager.createWindow("test-session")).resolves.toEqual({
+        windowId: "@1",
+        paneId: "%3",
+      });
       expect(vi.mocked(execFile).mock.calls[0]?.[1]).toEqual([
         "new-window",
         "-t",
         "test-session",
+        "-P",
+        "-F",
+        "#{window_id}:#{pane_id}",
       ]);
     });
 
@@ -470,7 +487,8 @@ describe("TmuxSessionManager", () => {
     it("lists panes for a session", async () => {
       mockExecSequence([
         {
-          stdout: "%0\t0\tbash\t1\tbash\t@0\n%1\t1\tvim\t0\tvim\t@0",
+          stdout:
+            "%0\t0\tbash\t1\tbash\t@0\t/workspaces/repo-a\n%1\t1\tvim\t0\tvim\t@0\t/workspaces/repo-a/packages/app",
         },
       ]);
       const panes = await manager.listPanes("test-session");
@@ -482,6 +500,7 @@ describe("TmuxSessionManager", () => {
           isActive: true,
           currentCommand: "bash",
           windowId: "@0",
+          currentPath: "/workspaces/repo-a",
         },
         {
           paneId: "%1",
@@ -490,7 +509,24 @@ describe("TmuxSessionManager", () => {
           isActive: false,
           currentCommand: "vim",
           windowId: "@0",
+          currentPath: "/workspaces/repo-a/packages/app",
         },
+      ]);
+    });
+
+    it("lists panes for only the active window when requested", async () => {
+      mockExecSequence([
+        {
+          stdout: "%0\t0\tbash\t1\tbash\t@0\t/workspaces/repo-a",
+        },
+      ]);
+      await manager.listPanes("test-session", { activeWindowOnly: true });
+      expect(vi.mocked(execFile).mock.calls[0]?.[1]).toEqual([
+        "list-panes",
+        "-t",
+        "test-session",
+        "-F",
+        "#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_active}\t#{pane_current_command}\t#{window_id}\t#{pane_current_path}",
       ]);
     });
 
@@ -517,7 +553,8 @@ describe("TmuxSessionManager", () => {
     it("lists pane DTOs for a session", async () => {
       mockExecSequence([
         {
-          stdout: "%0\t0\tbash\t0\tbash\t@0\n%2\t1\thtop\t1\thtop\t@0",
+          stdout:
+            "%0\t0\tbash\t0\tbash\t@0\t/workspaces/repo-a\n%2\t1\thtop\t1\thtop\t@0\t/workspaces/repo-a/tools",
         },
       ]);
       const dtos = await manager.listPaneDtos("test-session");
@@ -529,6 +566,7 @@ describe("TmuxSessionManager", () => {
           isActive: false,
           currentCommand: "bash",
           windowId: "@0",
+          currentPath: "/workspaces/repo-a",
         },
         {
           paneId: "%2",
@@ -537,6 +575,7 @@ describe("TmuxSessionManager", () => {
           isActive: true,
           currentCommand: "htop",
           windowId: "@0",
+          currentPath: "/workspaces/repo-a/tools",
         },
       ]);
     });

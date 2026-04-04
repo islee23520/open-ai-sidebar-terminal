@@ -31,6 +31,7 @@ export type WebviewMessage =
   | { type: "killSession"; sessionId: string }
   | { type: "createTmuxSession" }
   | { type: "createTmuxWindow" }
+  | { type: "createNativeShell" }
   | { type: "navigateTmuxWindow"; direction: "next" | "prev" }
   | { type: "navigateTmuxSession"; direction: "next" | "prev" }
   | { type: "switchNativeShell" }
@@ -39,9 +40,21 @@ export type WebviewMessage =
       sessionId: string;
       tool: string;
       savePreference: boolean;
+      targetPaneId?: string;
     }
   | { type: "splitTmuxPane"; direction: "h" | "v" }
-  | { type: "killTmuxPane" };
+  | { type: "zoomTmuxPane" }
+  | { type: "killTmuxPane" }
+  | { type: "toggleDashboard" }
+  | {
+      type: "dashboardAction";
+      action: string;
+      sessionId?: string;
+      windowId?: string;
+      paneId?: string;
+      direction?: string;
+    }
+  | { type: "openDashboardInEditor" };
 
 export type AiTool = string;
 
@@ -204,6 +217,7 @@ export type TmuxDashboardSessionDto = {
   workspace: string;
   isActive: boolean;
   paneCount?: number;
+  preview?: string;
 };
 
 export type TmuxDashboardPaneDto = {
@@ -213,6 +227,7 @@ export type TmuxDashboardPaneDto = {
   isActive: boolean;
   currentCommand?: string;
   windowId?: string;
+  currentPath?: string;
 };
 
 export type TmuxDashboardWindowDto = {
@@ -240,6 +255,7 @@ export type TmuxDashboardHostMessage =
       sessionName: string;
       defaultTool?: string;
       tools?: AiToolConfig[];
+      targetPaneId?: string;
     };
 
 export const ALLOWED_IMAGE_TYPES = [
@@ -293,7 +309,15 @@ export type HostMessage =
       sessionName: string;
       defaultTool?: string;
       tools?: AiToolConfig[];
-    };
+      targetPaneId?: string;
+    }
+  | {
+      type: "updateDashboard";
+      sessions: TmuxDashboardSessionDto[];
+      workspace: string;
+      showingAll?: boolean;
+    }
+  | { type: "toggleDashboard"; visible: boolean };
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type DiagnosticSeverity = "error" | "warning" | "information" | "hint";

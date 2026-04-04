@@ -192,7 +192,45 @@ describe("TerminalProvider", () => {
     });
     await Promise.resolve();
 
-    expect(launchSpy).toHaveBeenCalledWith("tmux-a", "codex", true);
+    expect(launchSpy).toHaveBeenCalledWith("tmux-a", "codex", true, undefined);
+  });
+
+  it("routes zoomTmuxPane messages through the provider zoom path", async () => {
+    mockConfiguration();
+    provider = createProvider();
+    const { messageHandler } = resolveProvider(provider);
+    const zoomSpy = vi.spyOn(provider, "zoomTmuxPane").mockResolvedValue();
+
+    messageHandler({ type: "zoomTmuxPane" });
+    await Promise.resolve();
+
+    expect(zoomSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the terminal renderer in an editor tab", () => {
+    mockConfiguration();
+    provider = createProvider();
+    resolveProvider(provider);
+
+    provider.openInEditorTab();
+
+    expect(vscode.window.createWebviewPanel).toHaveBeenCalledWith(
+      "opencodeTui.terminalEditor",
+      "Open AI Sidebar Terminal",
+      vscode.ViewColumn.Beside,
+      expect.objectContaining({
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: expect.any(Array),
+      }),
+    );
+
+    const panel = vi.mocked(vscode.window.createWebviewPanel).mock.results[0]
+      ?.value as any;
+    provider.focus();
+    expect(panel.webview.postMessage).toHaveBeenCalledWith({
+      type: "focusTerminal",
+    });
   });
 
   it("starts the default terminal path without sidebar tree interaction", async () => {

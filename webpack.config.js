@@ -46,7 +46,7 @@ const webviewConfig = {
   mode: "none",
   entry: {
     main: "./src/webview/main.ts",
-    dashboard: "./src/webview/dashboard-manager.ts",
+    dashboard: "./src/webview/dashboard-manager.tsx",
   },
   output: {
     path: path.resolve(__dirname, "dist"),
@@ -58,7 +58,7 @@ const webviewConfig = {
     },
   },
   resolve: {
-    extensions: [".ts", ".js"],
+    extensions: [".tsx", ".ts", ".js"],
     fallback: {
       path: false,
       fs: false,
@@ -67,7 +67,7 @@ const webviewConfig = {
   module: {
     rules: [
       {
-        test: /\.ts$/,
+        test: /\.tsx?$/,
         exclude: [
           /node_modules/,
           /\.test\.ts$/,

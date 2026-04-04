@@ -19,6 +19,7 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "opencodeTui";
 
   private _view?: vscode.WebviewView;
+  private _panel?: vscode.WebviewPanel;
   private readonly contextSharingService: ContextSharingService;
   private readonly logger = OutputChannelService.getInstance();
   private readonly aiToolRegistry: AiToolOperatorRegistry;
@@ -81,11 +82,19 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
         this.sessionRuntime.formatDroppedFiles(paths, { useAtSyntax }),
       formatPastedImage: (tempPath) =>
         this.sessionRuntime.formatPastedImage(tempPath),
-      launchAiTool: (sessionId, toolName, savePreference) =>
-        this.launchAiTool(sessionId, toolName, savePreference),
-      showAiToolSelector: (sessionId, sessionName, forceShow) =>
-        Promise.resolve(this.showAiToolSelector(sessionId, sessionName, forceShow)),
+      launchAiTool: (sessionId, toolName, savePreference, targetPaneId) =>
+        this.launchAiTool(sessionId, toolName, savePreference, targetPaneId),
+      showAiToolSelector: (sessionId, sessionName, forceShow, targetPaneId) =>
+        Promise.resolve(
+          this.showAiToolSelector(
+            sessionId,
+            sessionName,
+            forceShow,
+            targetPaneId,
+          ),
+        ),
       splitTmuxPane: (direction) => this.splitTmuxPane(direction),
+      zoomTmuxPane: () => this.zoomTmuxPane(),
       killTmuxPane: () => this.killTmuxPane(),
       getSelectedTmuxSessionId: () => this.getSelectedTmuxSessionId(),
     };
@@ -177,7 +186,55 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
   }
 
   public focus(): void {
+    this._panel?.reveal(vscode.ViewColumn.Active);
     this.postWebviewMessage({ type: "focusTerminal" });
+  }
+
+  public openInEditorTab(): void {
+    if (this._panel) {
+      this._panel.reveal(vscode.ViewColumn.Active);
+      this.focus();
+      return;
+    }
+
+    const panel = vscode.window.createWebviewPanel(
+      "opencodeTui.terminalEditor",
+      "Open AI Sidebar Terminal",
+      vscode.ViewColumn.Beside,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [this.context.extensionUri],
+      },
+    );
+
+    this._panel = panel;
+    panel.webview.html = this.getHtmlForWebview(panel.webview);
+
+    const processAlive = this.sessionRuntime.hasLiveTerminalProcess();
+    if (this.sessionRuntime.isStartedFlag() && !processAlive) {
+      this.sessionRuntime.resetState();
+    }
+
+    panel.webview.onDidReceiveMessage((message) => {
+      this.handleMessage(message);
+    });
+
+    if (processAlive) {
+      this.sessionRuntime.reconnectListeners();
+    }
+
+    this.postTerminalConfig();
+
+    panel.onDidDispose(() => {
+      if (this._panel === panel) {
+        this._panel = undefined;
+        if (this._view) {
+          this.postTerminalConfig();
+          this.postWebviewMessage({ type: "webviewVisible" });
+        }
+      }
+    });
   }
 
   public formatFileReference(reference: AiToolFileReference): string {
@@ -265,12 +322,18 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
     await this.sessionRuntime.killTmuxSession(sessionId);
   }
 
-  public async splitTmuxPane(direction: "h" | "v"): Promise<void> {
-    await this.sessionRuntime.splitTmuxPane(direction);
+  public async splitTmuxPane(
+    direction: "h" | "v",
+  ): Promise<string | undefined> {
+    return await this.sessionRuntime.splitTmuxPane(direction);
   }
 
   public getSelectedTmuxSessionId(): string | undefined {
     return this.sessionRuntime.getSelectedTmuxSessionId();
+  }
+
+  public async zoomTmuxPane(): Promise<void> {
+    await this.sessionRuntime.zoomTmuxPane();
   }
 
   public async killTmuxPane(): Promise<void> {
@@ -297,6 +360,7 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
     sessionId: string,
     toolName: string,
     savePreference: boolean,
+    targetPaneId?: string,
   ): Promise<void> {
     if (savePreference) {
       const config = vscode.workspace.getConfiguration("opencodeTui");
@@ -321,12 +385,18 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
     this.sessionRuntime.rememberSelectedTool(tool.name, instanceId);
 
     try {
-      const panes = await this.tmuxSessionManager.listPanes(sessionId);
-      const targetPane = panes.find((p) => p.isActive) ?? panes[0];
-      if (targetPane) {
+      let paneIdToUse: string | undefined = targetPaneId;
+      if (!paneIdToUse) {
+        const panes = await this.tmuxSessionManager.listPanes(sessionId, {
+          activeWindowOnly: true,
+        });
+        const targetPane = panes.find((p) => p.isActive) ?? panes[0];
+        paneIdToUse = targetPane?.paneId;
+      }
+      if (paneIdToUse) {
         const operator = this.aiToolRegistry.getForConfig(tool);
         await this.tmuxSessionManager.sendTextToPane(
-          targetPane.paneId,
+          paneIdToUse,
           operator.getLaunchCommand(tool),
         );
       }
@@ -345,6 +415,7 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
     sessionId: string,
     sessionName: string,
     forceShow = false,
+    targetPaneId?: string,
   ): void {
     const config = vscode.workspace.getConfiguration("opencodeTui");
     const instanceId =
@@ -356,7 +427,7 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
       config.get("aiTools", []),
     );
     if (!forceShow && savedTool) {
-      void this.launchAiTool(sessionId, savedTool, false);
+      void this.launchAiTool(sessionId, savedTool, false, targetPaneId);
       return;
     }
     this.postWebviewMessage({
@@ -365,6 +436,7 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
       sessionName,
       defaultTool: undefined,
       tools,
+      targetPaneId,
     });
   }
 
@@ -389,7 +461,8 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
   }
 
   private postWebviewMessage(message: unknown): void {
-    this._view?.webview.postMessage(message);
+    const webview = this._panel?.webview ?? this._view?.webview;
+    webview?.postMessage(message);
   }
 
   private postTerminalConfig(): void {
@@ -457,6 +530,10 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
       text += possible.charAt(Math.floor(Math.random() * possible.length));
     }
     return text;
+  }
+
+  public toggleDashboard(): void {
+    void vscode.commands.executeCommand("opencodeTui.openTerminalManager");
   }
 
   public dispose(): void {

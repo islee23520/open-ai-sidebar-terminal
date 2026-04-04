@@ -166,16 +166,15 @@ export class ExtensionLifecycle {
           this.instanceStore,
           this.tuiProvider,
         );
-        const tmuxDashboardProvider = vscode.window.registerWebviewViewProvider(
-          TerminalDashboardProvider.viewType,
-          this.terminalDashboardProvider,
-          {
-            webviewOptions: {
-              retainContextWhenHidden: true,
+
+        context.subscriptions.push(
+          vscode.commands.registerCommand(
+            "opencodeTui.openTerminalManager",
+            () => {
+              this.terminalDashboardProvider?.show();
             },
-          },
+          ),
         );
-        context.subscriptions.push(tmuxDashboardProvider);
       }
 
       // Register commands

@@ -1,5 +1,11 @@
 import { vi } from "vitest";
 
+export const ViewColumn = {
+  Active: -1,
+  Beside: -2,
+  One: 1,
+};
+
 export const window = {
   showInformationMessage: vi.fn(),
   showErrorMessage: vi.fn(),
@@ -36,13 +42,19 @@ export const window = {
   }),
   createWebviewPanel: vi.fn(() => ({
     webview: {
+      options: {},
       html: "",
       onDidReceiveMessage: vi.fn(),
       postMessage: vi.fn(),
       asWebviewUri: vi.fn((uri: any) => uri),
       cspSource: "",
     },
-    onDidDispose: vi.fn(),
+    visible: true,
+    onDidDispose: vi.fn((listener: Function) => {
+      void listener;
+      return { dispose: vi.fn() };
+    }),
+    reveal: vi.fn(),
     dispose: vi.fn(),
   })),
   createOutputChannel: vi.fn((name: string, options?: { log?: boolean }) => {

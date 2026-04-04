@@ -25,6 +25,7 @@ export class TerminalDashboardProvider
   public static readonly viewType = "opencodeTui.terminalDashboard";
 
   private view?: vscode.WebviewView;
+  private panel?: vscode.WebviewPanel;
   private readonly subscriptions: vscode.Disposable[] = [];
   private pollTimer?: ReturnType<typeof setInterval>;
   private pendingMessage?: TmuxDashboardHostMessage;
@@ -59,18 +60,7 @@ export class TerminalDashboardProvider
     this.disposeSubscriptions();
     this.view = webviewView;
 
-    webviewView.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [this.context.extensionUri],
-    };
-
-    webviewView.webview.html = this.getHtmlContent(webviewView.webview);
-
-    this.subscriptions.push(
-      webviewView.webview.onDidReceiveMessage((message) => {
-        void this.handleWebviewMessage(message as TmuxDashboardActionMessage);
-      }),
-    );
+    this.configureWebview(webviewView.webview);
 
     this.subscriptions.push(
       webviewView.onDidChangeVisibility(() => {
@@ -84,30 +74,63 @@ export class TerminalDashboardProvider
       }),
     );
 
-    this.subscriptions.push(
-      this.tmuxSessionManager.onPaneChanged(() => {
-        void this.postSessionsToWebview();
-      }),
-    );
-
-    this.subscriptions.push(
-      webviewView.onDidDispose(() => {
-        this.stopPolling();
-        if (this.view === webviewView) {
-          this.view = undefined;
-        }
-      }),
-    );
+    this.attachCommonSubscriptions(() => {
+      this.stopPolling();
+      if (this.view === webviewView) {
+        this.view = undefined;
+      }
+    }, webviewView.onDidDispose.bind(webviewView));
 
     void this.postSessionsToWebview();
     this.startPolling();
+  }
+
+  public show(): void {
+    if (this.panel) {
+      this.panel.reveal(vscode.ViewColumn.Beside, true);
+      return;
+    }
+
+    const panel = vscode.window.createWebviewPanel(
+      TerminalDashboardProvider.viewType,
+      "Terminal Manager",
+      {
+        preserveFocus: true,
+        viewColumn: vscode.ViewColumn.Beside,
+      },
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [this.context.extensionUri],
+      },
+    );
+
+    this.disposeSubscriptions();
+    this.view = undefined;
+    this.panel = panel;
+    this.configureWebview(panel.webview);
+
+    this.attachCommonSubscriptions(() => {
+      this.stopPolling();
+      if (this.panel === panel) {
+        this.panel = undefined;
+      }
+    }, panel.onDidDispose.bind(panel));
+
+    void this.postSessionsToWebview();
+    this.startPolling();
+  }
+
+  public reveal(): void {
+    this.panel?.reveal();
   }
 
   /**
    * Discovers, filters, and posts tmux sessions and their panes to the webview.
    */
   private async postSessionsToWebview(): Promise<void> {
-    if (!this.view) {
+    const webview = this.getActiveWebview();
+    if (!webview) {
       return;
     }
 
@@ -141,13 +164,16 @@ export class TerminalDashboardProvider
 
       const panesMap: Record<string, TmuxDashboardPaneDto[]> = {};
       const windowsMap: Record<string, TmuxDashboardWindowDto[]> = {};
+      const previewMap: Record<string, string> = {};
       for (const session of filtered) {
         try {
-          const [panes, windows] = await Promise.all([
+          const [panes, windows, preview] = await Promise.all([
             this.listPanesForSession(session.id),
             this.tmuxSessionManager.listWindows(session.id),
+            this.tmuxSessionManager.captureSessionPreview(session.id),
           ]);
           panesMap[session.id] = panes;
+          previewMap[session.id] = preview;
           windowsMap[session.id] = windows.map((w) => ({
             windowId: w.windowId,
             index: w.index,
@@ -158,6 +184,7 @@ export class TerminalDashboardProvider
         } catch {
           panesMap[session.id] = [];
           windowsMap[session.id] = [];
+          previewMap[session.id] = "";
         }
       }
 
@@ -167,6 +194,7 @@ export class TerminalDashboardProvider
         workspace: session.workspace,
         isActive: session.isActive,
         paneCount: panesMap[session.id]?.length ?? 0,
+        preview: previewMap[session.id],
       }));
 
       const config = vscode.workspace.getConfiguration("opencodeTui");
@@ -189,7 +217,7 @@ export class TerminalDashboardProvider
         tools,
       };
 
-      const posted = await this.view.webview.postMessage(message);
+      const posted = await webview.postMessage(message);
       if (!posted) {
         this.outputChannel?.appendLine(
           `[TerminalDashboard] postMessage returned false (webview not visible), queuing retry`,
@@ -207,9 +235,7 @@ export class TerminalDashboardProvider
         panes: {},
       };
 
-      if (this.view) {
-        this.view.webview.postMessage(fallbackMessage);
-      }
+      void webview.postMessage(fallbackMessage);
     }
   }
 
@@ -246,7 +272,7 @@ export class TerminalDashboardProvider
           )) as string | undefined;
           await this.postSessionsToWebview();
           if (newSessionId) {
-    await this.showAiToolSelector(newSessionId, newSessionId, true);
+            await this.showAiToolSelector(newSessionId, newSessionId, true);
           }
         }
         return;
@@ -301,14 +327,26 @@ export class TerminalDashboardProvider
         return;
       case "createWindow":
         {
+          const panes = await this.tmuxSessionManager.listPanes(
+            message.sessionId,
+            {
+              activeWindowOnly: true,
+            },
+          );
+          const activePane = panes.find((pane) => pane.isActive) ?? panes[0];
           const workspacePath =
             vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-          await this.tmuxSessionManager.createWindow(
+          const { paneId } = await this.tmuxSessionManager.createWindow(
             message.sessionId,
-            workspacePath,
+            activePane?.currentPath ?? workspacePath,
           );
           await this.postSessionsToWebview();
-    await this.showAiToolSelector(message.sessionId, message.sessionId, true);
+          await this.showAiToolSelector(
+            message.sessionId,
+            message.sessionId,
+            true,
+            paneId,
+          );
         }
         return;
       case "nextWindow":
@@ -339,25 +377,47 @@ export class TerminalDashboardProvider
         return;
       case "splitPane":
         {
-          const workspacePath =
-            vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-          await this.tmuxSessionManager.splitPane(
-            message.paneId ?? message.sessionId,
+          const panes = await this.tmuxSessionManager.listPanes(
+            message.sessionId,
+          );
+          const activePane =
+            panes.find((pane) => pane.paneId === message.paneId) ??
+            panes.find((pane) => pane.isActive) ??
+            panes[0];
+          const targetPaneId =
+            activePane?.paneId ?? message.paneId ?? message.sessionId;
+          const newPaneId = await this.tmuxSessionManager.splitPane(
+            targetPaneId,
             message.direction,
-            { workingDirectory: workspacePath },
+            {
+              workingDirectory: activePane?.currentPath,
+            },
           );
           await this.postSessionsToWebview();
-    await this.showAiToolSelector(message.sessionId, message.sessionId, true);
+          await this.showAiToolSelector(
+            message.sessionId,
+            message.sessionId,
+            true,
+            newPaneId,
+          );
         }
         return;
       case "splitPaneWithCommand":
         {
-          const workspacePath =
-            vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+          const panes = await this.tmuxSessionManager.listPanes(
+            message.sessionId,
+          );
+          const activePane =
+            panes.find((pane) => pane.paneId === message.paneId) ??
+            panes.find((pane) => pane.isActive) ??
+            panes[0];
           await this.tmuxSessionManager.splitPane(
-            message.paneId ?? message.sessionId,
+            activePane?.paneId ?? message.paneId ?? message.sessionId,
             message.direction,
-            { command: message.command, workingDirectory: workspacePath },
+            {
+              command: message.command,
+              workingDirectory: activePane?.currentPath,
+            },
           );
           await this.postSessionsToWebview();
         }
@@ -477,13 +537,20 @@ export class TerminalDashboardProvider
     sessionId: string,
     sessionName: string,
     forceShow = false,
+    targetPaneId?: string,
   ): Promise<void> {
     if (this.terminalProvider) {
-      this.terminalProvider.showAiToolSelector(sessionId, sessionName, forceShow);
+      this.terminalProvider.showAiToolSelector(
+        sessionId,
+        sessionName,
+        forceShow,
+        targetPaneId,
+      );
       return;
     }
 
-    if (!this.view) {
+    const webview = this.getActiveWebview();
+    if (!webview) {
       return;
     }
 
@@ -497,7 +564,7 @@ export class TerminalDashboardProvider
         : undefined) ?? config.get<AiTool>("defaultAiTool", "");
 
     if (savedTool) {
-      await this.handleLaunchAiTool(sessionId, savedTool, false);
+      await this.handleLaunchAiTool(sessionId, savedTool, false, targetPaneId);
       return;
     }
 
@@ -505,23 +572,25 @@ export class TerminalDashboardProvider
       config.get("aiTools", []),
     );
 
-    await this.view.webview.postMessage({
+    await webview.postMessage({
       type: "showAiToolSelector",
       sessionId,
       sessionName,
       defaultTool: undefined,
       tools,
+      targetPaneId,
     } satisfies TmuxDashboardHostMessage);
   }
 
   /**
    * Handles AI tool selection from the webview.
-   * Launches the selected tool in the first pane of the target tmux session.
+   * Launches the selected tool in the target pane of the tmux session.
    */
   private async handleLaunchAiTool(
     sessionId: string,
     toolName: string,
     savePreference: boolean,
+    targetPaneId?: string,
   ): Promise<void> {
     if (!this.terminalProvider) {
       return;
@@ -532,6 +601,7 @@ export class TerminalDashboardProvider
         sessionId,
         toolName,
         savePreference,
+        targetPaneId,
       );
     } catch (error) {
       this.outputChannel?.appendLine(
@@ -615,6 +685,7 @@ export class TerminalDashboardProvider
     this.stopPolling();
     this.disposeSubscriptions();
     this.view = undefined;
+    this.panel = undefined;
   }
 
   private disposeSubscriptions(): void {
@@ -643,9 +714,46 @@ export class TerminalDashboardProvider
   }
 
   private flushPendingMessage(): void {
-    if (this.pendingMessage && this.view) {
-      this.view.webview.postMessage(this.pendingMessage);
+    const webview = this.getActiveWebview();
+    if (this.pendingMessage && webview) {
+      webview.postMessage(this.pendingMessage);
       this.pendingMessage = undefined;
     }
+  }
+
+  private configureWebview(webview: vscode.Webview): void {
+    webview.options = {
+      enableScripts: true,
+      localResourceRoots: [this.context.extensionUri],
+    };
+    webview.html = this.getHtmlContent(webview);
+  }
+
+  private attachCommonSubscriptions(
+    onDispose: () => void,
+    registerDispose: (listener: () => void) => vscode.Disposable,
+  ): void {
+    const webview = this.getActiveWebview();
+    if (!webview) {
+      return;
+    }
+
+    this.subscriptions.push(
+      webview.onDidReceiveMessage((message) => {
+        void this.handleWebviewMessage(message as TmuxDashboardActionMessage);
+      }),
+    );
+
+    this.subscriptions.push(
+      this.tmuxSessionManager.onPaneChanged(() => {
+        void this.postSessionsToWebview();
+      }),
+    );
+
+    this.subscriptions.push(registerDispose(onDispose));
+  }
+
+  private getActiveWebview(): vscode.Webview | undefined {
+    return this.panel?.webview ?? this.view?.webview;
   }
 }

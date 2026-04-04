@@ -758,11 +758,30 @@ export class SessionRuntime {
     }
   }
 
-  public async createTmuxWindow(): Promise<void> {
+  public async createTmuxWindow(): Promise<
+    { windowId: string; paneId: string } | undefined
+  > {
     if (!this.tmuxSessionManager || !this.selectedTmuxSessionId) {
-      return;
+      return undefined;
     }
-    await this.tmuxSessionManager.createWindow(this.selectedTmuxSessionId);
+    const panes = await this.tmuxSessionManager.listPanes(
+      this.selectedTmuxSessionId,
+      { activeWindowOnly: true },
+    );
+    const activePane = panes.find((p) => p.isActive) ?? panes[0];
+    return await this.tmuxSessionManager.createWindow(
+      this.selectedTmuxSessionId,
+      activePane?.currentPath ?? this.resolveWorkspacePathForTmuxFallback(),
+    );
+  }
+
+  private async getActivePaneInSelectedWindow(
+    sessionId: string,
+  ): Promise<(typeof panes)[number] | undefined> {
+    const panes = await this.tmuxSessionManager!.listPanes(sessionId, {
+      activeWindowOnly: true,
+    });
+    return panes.find((p) => p.isActive) ?? panes[0];
   }
 
   public async navigateTmuxWindow(direction: "next" | "prev"): Promise<void> {
@@ -776,7 +795,36 @@ export class SessionRuntime {
     }
   }
 
-  public async splitTmuxPane(direction: "h" | "v"): Promise<void> {
+  public async splitTmuxPane(
+    direction: "h" | "v",
+  ): Promise<string | undefined> {
+    if (!this.tmuxSessionManager) {
+      return undefined;
+    }
+    const sessionId =
+      this.selectedTmuxSessionId ??
+      this.resolveTmuxSessionIdForInstance(this.activeInstanceId) ??
+      (await this.resolveFallbackTmuxSessionId());
+    if (!sessionId) {
+      return undefined;
+    }
+    const panes = await this.tmuxSessionManager.listPanes(sessionId);
+    const activePane = panes.find((p) => p.isActive) ?? panes[0];
+    if (activePane) {
+      return await this.tmuxSessionManager.splitPane(
+        activePane.paneId,
+        direction,
+        {
+          workingDirectory:
+            activePane.currentPath ??
+            this.resolveWorkspacePathForTmuxFallback(),
+        },
+      );
+    }
+    return undefined;
+  }
+
+  public async zoomTmuxPane(): Promise<void> {
     if (!this.tmuxSessionManager) {
       return;
     }
@@ -790,7 +838,7 @@ export class SessionRuntime {
     const panes = await this.tmuxSessionManager.listPanes(sessionId);
     const activePane = panes.find((p) => p.isActive) ?? panes[0];
     if (activePane) {
-      await this.tmuxSessionManager.splitPane(activePane.paneId, direction);
+      await this.tmuxSessionManager.zoomPane(activePane.paneId);
     }
   }
 
@@ -805,7 +853,9 @@ export class SessionRuntime {
     if (!sessionId) {
       return;
     }
-    const panes = await this.tmuxSessionManager.listPanes(sessionId);
+    const panes = await this.tmuxSessionManager.listPanes(sessionId, {
+      activeWindowOnly: true,
+    });
     if (panes.length <= 1) {
       return;
     }
@@ -1070,11 +1120,10 @@ export class SessionRuntime {
 
     // Cache initial pane count and active pane commands
     try {
-      const panes = await this.tmuxSessionManager.listPanes(sessionId);
-      this.knownPaneIds.set(
-        sessionId,
-        new Set(panes.map((p) => p.paneId)),
-      );
+      const panes = await this.tmuxSessionManager.listPanes(sessionId, {
+        activeWindowOnly: true,
+      });
+      this.knownPaneIds.set(sessionId, new Set(panes.map((p) => p.paneId)));
       const activePane = panes.find((p) => p.isActive);
       if (activePane?.paneId) {
         this.knownPaneCommands.set(
@@ -1089,7 +1138,7 @@ export class SessionRuntime {
     // SIGUSR2 for immediate detection (from tmux hooks)
     if (!this.sigusr2Handler) {
       this.sigusr2Handler = () => {
-    this.sigusr2FiredSinceLastCheck = true;
+        this.sigusr2FiredSinceLastCheck = true;
         void this.checkPaneChanges();
       };
       process.on("SIGUSR2", this.sigusr2Handler);
@@ -1102,7 +1151,7 @@ export class SessionRuntime {
     ) {
       this.externalChangeListener =
         this.tmuxSessionManager.onExternalPaneChange(() => {
-      this.sigusr2FiredSinceLastCheck = true;
+          this.sigusr2FiredSinceLastCheck = true;
         });
     }
 
@@ -1156,7 +1205,9 @@ export class SessionRuntime {
     }
 
     try {
-      const panes = await this.tmuxSessionManager.listPanes(activeSessionId);
+      const panes = await this.tmuxSessionManager.listPanes(activeSessionId, {
+        activeWindowOnly: true,
+      });
       const currentPaneIds = new Set(panes.map((p) => p.paneId));
       const previousPaneIds = this.knownPaneIds.get(activeSessionId);
 

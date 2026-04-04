@@ -20,21 +20,22 @@ import {
   registerTmuxPaneCommands,
   type TmuxPaneCommandDependencies,
 } from "./tmuxPaneCommands";
+import {
+  registerDashboardCommands,
+  type DashboardCommandDependencies,
+} from "./dashboardCommands";
 
 export interface RegisterCommandDependencies
   extends
     TerminalCommandDependencies,
     TmuxSessionCommandDependencies,
-    TmuxPaneCommandDependencies {
-  provider: TerminalProvider | undefined;
-  tmuxManager: TmuxSessionManager | undefined;
+    TmuxPaneCommandDependencies,
+    DashboardCommandDependencies {
   terminalManager: TerminalManager | undefined;
   contextSharingService: ContextSharingService | undefined;
   contextManager: ContextManager | undefined;
-  instanceStore: InstanceStore | undefined;
   instanceController: InstanceController | undefined;
   instanceQuickPick: InstanceQuickPick | undefined;
-  outputChannel: OutputChannelService | undefined;
 }
 
 export function registerCommands(
@@ -45,6 +46,7 @@ export function registerCommands(
     ...registerTerminalCommands(deps),
     ...registerTmuxSessionCommands(deps),
     ...registerTmuxPaneCommands(deps),
+    ...registerDashboardCommands(deps),
   ];
 
   context.subscriptions.push(...disposables);

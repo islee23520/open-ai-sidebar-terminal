@@ -449,3 +449,42 @@ button[disabled] {
   margin-top: 6px;
   text-align: center;
 }
+
+.session-preview {
+  margin-top: 6px;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  background: var(
+    --vscode-terminal-background,
+    var(--vscode-editor-background)
+  );
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 3px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 4px;
+  line-height: 1.3;
+  letter-spacing: 0.2px;
+  padding: 2px 3px;
+  overflow: hidden;
+  opacity: 0.6;
+  white-space: pre;
+  color: var(--vscode-terminal-foreground, var(--vscode-foreground));
+}
+
+.session-preview.empty {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  aspect-ratio: unset;
+  padding: 8px;
+}
+
+.preview-line {
+  overflow: hidden;
+  white-space: pre;
+  height: 1.4em;
+}

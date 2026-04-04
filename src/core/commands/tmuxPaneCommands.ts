@@ -133,8 +133,16 @@ export function registerTmuxPaneCommands(
         return;
       }
       try {
-        await deps.tmuxManager.splitPane(item?.paneId ?? sessionId, "h");
-        deps.provider?.showAiToolSelector(sessionId, sessionId, true);
+        const newPaneId = await deps.tmuxManager.splitPane(
+          item?.paneId ?? sessionId,
+          "h",
+        );
+        deps.provider?.showAiToolSelector(
+          sessionId,
+          sessionId,
+          true,
+          newPaneId,
+        );
       } catch {
         vscode.window.showErrorMessage("Failed to split pane");
       }
@@ -152,8 +160,16 @@ export function registerTmuxPaneCommands(
         return;
       }
       try {
-        await deps.tmuxManager.splitPane(item?.paneId ?? sessionId, "v");
-        deps.provider?.showAiToolSelector(sessionId, sessionId, true);
+        const newPaneId = await deps.tmuxManager.splitPane(
+          item?.paneId ?? sessionId,
+          "v",
+        );
+        deps.provider?.showAiToolSelector(
+          sessionId,
+          sessionId,
+          true,
+          newPaneId,
+        );
       } catch {
         vscode.window.showErrorMessage("Failed to split pane");
       }
@@ -414,8 +430,8 @@ export function registerTmuxPaneCommands(
       const sessionId = deps.resolveActiveTmuxSessionId();
       if (!sessionId) return;
       try {
-        await deps.tmuxManager.createWindow(sessionId);
-        deps.provider?.showAiToolSelector(sessionId, sessionId, true);
+        const { paneId } = await deps.tmuxManager.createWindow(sessionId);
+        deps.provider?.showAiToolSelector(sessionId, sessionId, true, paneId);
       } catch {
         vscode.window.showErrorMessage("Failed to create window");
       }
@@ -507,9 +523,7 @@ export function registerTmuxPaneCommands(
   const tmuxRefreshCommand = vscode.commands.registerCommand(
     "opencodeTui.tmuxRefresh",
     async () => {
-      await vscode.commands.executeCommand(
-        "opencodeTui.terminalDashboard.focus",
-      );
+      await vscode.commands.executeCommand("opencodeTui.openTerminalManager");
     },
   );
 
