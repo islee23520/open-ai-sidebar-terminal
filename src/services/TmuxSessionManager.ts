@@ -67,6 +67,8 @@ interface EnsureTmuxSessionResult {
 export class TmuxSessionManager {
   private readonly _onPaneChanged = new vscode.EventEmitter<void>();
   public readonly onPaneChanged = this._onPaneChanged.event;
+  private readonly _onExternalPaneChange = new vscode.EventEmitter<string>();
+  public readonly onExternalPaneChange = this._onExternalPaneChange.event;
 
   constructor(
     private readonly runExecFile: ExecFileLike = (file, args, callback) => {
@@ -76,6 +78,11 @@ export class TmuxSessionManager {
 
   public dispose(): void {
     this._onPaneChanged.dispose();
+    this._onExternalPaneChange.dispose();
+  }
+
+  public notifyExternalChange(sessionId: string): void {
+    this._onExternalPaneChange.fire(sessionId);
   }
 
   public async isAvailable(): Promise<boolean> {
@@ -255,6 +262,75 @@ export class TmuxSessionManager {
       }
 
       throw error;
+    }
+  }
+
+  public async registerSessionHooks(
+    sessionId: string,
+    signalPid: number,
+  ): Promise<void> {
+    try {
+      await this.runTmux([
+        "set-hook",
+        "-g",
+        "-t",
+        sessionId,
+        "after-split-window",
+        this.buildHookCommand(signalPid),
+      ]);
+      await this.runTmux([
+        "set-hook",
+        "-g",
+        "-t",
+        sessionId,
+        "after-new-window",
+        this.buildHookCommand(signalPid),
+      ]);
+    } catch (error) {
+      try {
+        if (this.isTmuxUnavailable(error)) {
+          throw new TmuxUnavailableError();
+        }
+
+        throw error;
+      } catch (hookError) {
+        console.warn(
+          `[TmuxSessionManager] Failed to register session hooks for "${sessionId}": ${hookError instanceof Error ? hookError.message : String(hookError)}`,
+        );
+      }
+    }
+  }
+
+  public async unregisterSessionHooks(sessionId: string): Promise<void> {
+    try {
+      await this.runTmux([
+        "set-hook",
+        "-u",
+        "-g",
+        "-t",
+        sessionId,
+        "after-split-window",
+      ]);
+      await this.runTmux([
+        "set-hook",
+        "-u",
+        "-g",
+        "-t",
+        sessionId,
+        "after-new-window",
+      ]);
+    } catch (error) {
+      try {
+        if (this.isTmuxUnavailable(error)) {
+          throw new TmuxUnavailableError();
+        }
+
+        throw error;
+      } catch (hookError) {
+        console.warn(
+          `[TmuxSessionManager] Failed to unregister session hooks for "${sessionId}": ${hookError instanceof Error ? hookError.message : String(hookError)}`,
+        );
+      }
     }
   }
 
@@ -756,6 +832,10 @@ export class TmuxSessionManager {
 
     const normalizedPath = workspacePath.trim().replace(/[\\/]+$/, "");
     return basename(normalizedPath) || fallbackName;
+  }
+
+  private buildHookCommand(signalPid: number): string {
+    return `run-shell "kill -USR2 ${signalPid} 2>/dev/null || true"`;
   }
 
   private runTmux(args: string[]): Promise<string> {

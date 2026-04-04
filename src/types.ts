@@ -65,12 +65,12 @@ export const DEFAULT_AI_TOOLS: readonly AiToolConfig[] = [
     operator: "opencode",
   },
   {
-    name: "claude-code",
+    name: "claude",
     label: "Claude Code",
     path: "",
     args: [],
-    aliases: ["claude"],
-    operator: "claude-code",
+    aliases: ["claude-code"],
+    operator: "claude",
   },
   {
     name: "codex",

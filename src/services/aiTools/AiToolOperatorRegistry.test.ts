@@ -8,7 +8,7 @@ describe("AiToolOperatorRegistry", () => {
 
     const resolved = registry.resolveTool(DEFAULT_AI_TOOLS, "claude");
 
-    expect(resolved?.name).toBe("claude-code");
+    expect(resolved?.name).toBe("claude");
   });
 
   it("formats file references through the matching operator", () => {
@@ -30,15 +30,16 @@ describe("AiToolOperatorRegistry", () => {
   it("uses operator aliases when matching a config", () => {
     const registry = new AiToolOperatorRegistry();
     const tool = {
-      name: "claude-code",
+      name: "claude",
       label: "Claude Code",
       path: "",
       args: [],
-      aliases: ["claude"],
-      operator: "claude-code",
+      aliases: ["claude-code"],
+      operator: "claude",
     };
 
-    expect(registry.getForConfig(tool).id).toBe("claude-code");
+    expect(registry.getForConfig(tool).id).toBe("claude");
     expect(registry.matchesName(tool, "claude")).toBe(true);
-  });
+});
+
 });

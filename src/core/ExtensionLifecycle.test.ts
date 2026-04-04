@@ -253,7 +253,6 @@ describe("ExtensionLifecycle", () => {
             id: "existing-workspace-instance",
             workspaceUri,
             label: "Existing Workspace",
-            command: "opencode --backend existing",
           },
           runtime: {},
           state: "connected",
@@ -284,7 +283,6 @@ describe("ExtensionLifecycle", () => {
             id: "disconnected-workspace-instance",
             workspaceUri,
             label: "Disconnected Workspace",
-            command: "opencode --backend existing",
           },
           runtime: {},
           state: "disconnected",
@@ -307,15 +305,7 @@ describe("ExtensionLifecycle", () => {
         );
       });
 
-      it("should persist configured command for new workspace instances before spawn", async () => {
-        const configuredCommand = "opencode --backend claude";
-        vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
-          get: vi.fn((key: string, defaultValue?: unknown) =>
-            key === "command" ? configuredCommand : defaultValue,
-          ),
-          update: vi.fn(),
-        } as any);
-
+      it("should persist workspace metadata for new workspace instances before spawn", async () => {
         const instanceStore = new InstanceStore();
         const spawnSpy = vi.fn().mockResolvedValue(undefined);
         (lifecycle as any).instanceStore = instanceStore;
@@ -331,7 +321,7 @@ describe("ExtensionLifecycle", () => {
 
         expect(createdRecord).toBeDefined();
         expect(createdRecord?.config.workspaceUri).toBe(workspaceUri);
-        expect(createdRecord?.config.command).toBe(configuredCommand);
+        expect(createdRecord?.config.label).toBe("OpenCode (Workspace)");
       });
     });
   });

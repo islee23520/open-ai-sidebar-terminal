@@ -152,15 +152,7 @@ export class InstanceRegistry implements vscode.Disposable {
       };
     }
 
-    const fromLegacySettings = this.readLegacySettingsConfig();
-    if (!fromLegacySettings) {
-      return undefined;
-    }
-
-    return {
-      id: DEFAULT_INSTANCE_ID,
-      ...fromLegacySettings,
-    };
+    return undefined;
   }
 
   private readLegacyStoredConfig(): Partial<InstanceConfig> | undefined {
@@ -179,39 +171,6 @@ export class InstanceRegistry implements vscode.Disposable {
     }
 
     return undefined;
-  }
-
-  private readLegacySettingsConfig(): Partial<InstanceConfig> | undefined {
-    const config = vscode.workspace.getConfiguration("opencodeTui");
-    const commandInspection = config.inspect<string>("command");
-    const enableHttpApiInspection = config.inspect<boolean>("enableHttpApi");
-
-    const hasCustomCommand =
-      commandInspection?.workspaceValue !== undefined ||
-      commandInspection?.workspaceFolderValue !== undefined;
-    const hasCustomHttpFlag =
-      enableHttpApiInspection?.workspaceValue !== undefined ||
-      enableHttpApiInspection?.workspaceFolderValue !== undefined;
-
-    if (!hasCustomCommand && !hasCustomHttpFlag) {
-      return undefined;
-    }
-
-    const migrated: Partial<InstanceConfig> = {};
-    if (hasCustomCommand) {
-      migrated.command = config.get<string>("command");
-    }
-
-    if (hasCustomHttpFlag) {
-      migrated.enableHttpApi = config.get<boolean>("enableHttpApi", true);
-    }
-
-    const workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri.toString();
-    if (workspaceUri) {
-      migrated.workspaceUri = workspaceUri;
-    }
-
-    return migrated;
   }
 
   private toConfigs(records: readonly InstanceRecord[]): InstanceConfig[] {
@@ -247,8 +206,6 @@ export class InstanceRegistry implements vscode.Disposable {
           ? candidate.workspaceUri
           : undefined,
       label: typeof candidate.label === "string" ? candidate.label : undefined,
-      command:
-        typeof candidate.command === "string" ? candidate.command : undefined,
       args: Array.isArray(candidate.args)
         ? candidate.args.filter((arg): arg is string => typeof arg === "string")
         : undefined,
@@ -279,8 +236,6 @@ export class InstanceRegistry implements vscode.Disposable {
           ? candidate.workspaceUri
           : undefined,
       label: typeof candidate.label === "string" ? candidate.label : undefined,
-      command:
-        typeof candidate.command === "string" ? candidate.command : undefined,
       args: Array.isArray(candidate.args)
         ? candidate.args.filter((arg): arg is string => typeof arg === "string")
         : undefined,
@@ -301,7 +256,6 @@ export class InstanceRegistry implements vscode.Disposable {
     const hasLegacyField =
       config.workspaceUri !== undefined ||
       config.label !== undefined ||
-      config.command !== undefined ||
       config.args !== undefined ||
       config.selectedAiTool !== undefined ||
       config.preferredPort !== undefined ||

@@ -55,7 +55,6 @@ describe("TerminalProvider", () => {
   function mockConfiguration(options?: {
     autoStartOnOpen?: boolean;
     enableHttpApi?: boolean;
-    command?: string;
     defaultAiTool?: string;
     aiTools?: readonly unknown[];
     nativeShellDefault?: string;
@@ -64,7 +63,6 @@ describe("TerminalProvider", () => {
     const {
       autoStartOnOpen = false,
       enableHttpApi = false,
-      command = "opencode -c",
       defaultAiTool = "opencode",
       aiTools = DEFAULT_AI_TOOLS,
       nativeShellDefault = "",
@@ -78,9 +76,6 @@ describe("TerminalProvider", () => {
         }
         if (key === "enableHttpApi") {
           return enableHttpApi;
-        }
-        if (key === "command") {
-          return command;
         }
         if (key === "defaultAiTool") {
           return defaultAiTool;
@@ -132,8 +127,9 @@ describe("TerminalProvider", () => {
   }
 
   async function flushAsyncStartup(): Promise<void> {
-    await Promise.resolve();
-    await Promise.resolve();
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+    }
   }
 
   it("routes switchSession messages through tmux session switching", () => {
@@ -216,7 +212,7 @@ describe("TerminalProvider", () => {
       120,
       40,
       "opencode-main",
-      expect.any(String),
+      os.homedir(),
     );
   });
 
@@ -848,7 +844,7 @@ describe("TerminalProvider", () => {
     const resizeSpy = vi.spyOn(terminalManager, "resizeTerminal");
     terminalManager.createTerminal(
       "session-b",
-      "opencode -c",
+      "opencode",
       {},
       undefined,
       undefined,

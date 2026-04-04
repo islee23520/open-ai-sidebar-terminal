@@ -246,7 +246,7 @@ export class TerminalDashboardProvider
           )) as string | undefined;
           await this.postSessionsToWebview();
           if (newSessionId) {
-            await this.showAiToolSelector(newSessionId, newSessionId);
+    await this.showAiToolSelector(newSessionId, newSessionId, true);
           }
         }
         return;
@@ -308,7 +308,7 @@ export class TerminalDashboardProvider
             workspacePath,
           );
           await this.postSessionsToWebview();
-          await this.showAiToolSelector(message.sessionId, message.sessionId);
+    await this.showAiToolSelector(message.sessionId, message.sessionId, true);
         }
         return;
       case "nextWindow":
@@ -347,7 +347,7 @@ export class TerminalDashboardProvider
             { workingDirectory: workspacePath },
           );
           await this.postSessionsToWebview();
-          await this.showAiToolSelector(message.sessionId, message.sessionId);
+    await this.showAiToolSelector(message.sessionId, message.sessionId, true);
         }
         return;
       case "splitPaneWithCommand":
@@ -476,9 +476,10 @@ export class TerminalDashboardProvider
   public async showAiToolSelector(
     sessionId: string,
     sessionName: string,
+    forceShow = false,
   ): Promise<void> {
     if (this.terminalProvider) {
-      this.terminalProvider.showAiToolSelector(sessionId, sessionName);
+      this.terminalProvider.showAiToolSelector(sessionId, sessionName, forceShow);
       return;
     }
 

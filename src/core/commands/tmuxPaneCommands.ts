@@ -134,7 +134,7 @@ export function registerTmuxPaneCommands(
       }
       try {
         await deps.tmuxManager.splitPane(item?.paneId ?? sessionId, "h");
-        deps.provider?.showAiToolSelector(sessionId, sessionId);
+        deps.provider?.showAiToolSelector(sessionId, sessionId, true);
       } catch {
         vscode.window.showErrorMessage("Failed to split pane");
       }
@@ -153,7 +153,7 @@ export function registerTmuxPaneCommands(
       }
       try {
         await deps.tmuxManager.splitPane(item?.paneId ?? sessionId, "v");
-        deps.provider?.showAiToolSelector(sessionId, sessionId);
+        deps.provider?.showAiToolSelector(sessionId, sessionId, true);
       } catch {
         vscode.window.showErrorMessage("Failed to split pane");
       }
@@ -415,7 +415,7 @@ export function registerTmuxPaneCommands(
       if (!sessionId) return;
       try {
         await deps.tmuxManager.createWindow(sessionId);
-        deps.provider?.showAiToolSelector(sessionId, sessionId);
+        deps.provider?.showAiToolSelector(sessionId, sessionId, true);
       } catch {
         vscode.window.showErrorMessage("Failed to create window");
       }

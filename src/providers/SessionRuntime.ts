@@ -25,6 +25,11 @@ interface SessionRuntimeCallbacks {
   postMessage: (message: unknown) => void;
   onActiveInstanceChanged: (instanceId: InstanceId) => void;
   requestStartOpenCode: () => Promise<void>;
+  showAiToolSelector: (
+    sessionId: string,
+    sessionName: string,
+    forceShow?: boolean,
+  ) => void;
 }
 
 export class SessionRuntime {
@@ -47,6 +52,11 @@ export class SessionRuntime {
   private activeTool?: AiToolConfig;
   private clipboardPollInterval?: ReturnType<typeof setInterval>;
   private lastTmuxBuffer = "";
+  private sigusr2Handler?: () => void;
+  private knownPaneCounts: Map<string, number> = new Map();
+  private externalChangeListener?: vscode.Disposable;
+  private paneMonitorInterval?: ReturnType<typeof setInterval>;
+  private knownPaneCommands: Map<string, string> = new Map();
 
   public constructor(
     private readonly terminalManager: TerminalManager,
@@ -248,6 +258,16 @@ export class SessionRuntime {
         try {
           await this.tmuxSessionManager.setMouseOn(tmuxSessionId);
         } catch {}
+
+        try {
+          await this.tmuxSessionManager.registerSessionHooks(
+            tmuxSessionId,
+            process.pid,
+          );
+        } catch {}
+        try {
+          await this.startExternalChangeMonitoring(tmuxSessionId);
+        } catch {}
       }
 
       const terminalCommand = this.resolveTerminalStartupCommand(
@@ -305,7 +325,6 @@ export class SessionRuntime {
               ...existing,
               config: {
                 ...existing.config,
-                command,
                 selectedAiTool: this.activeTool?.name,
               },
               runtime: {
@@ -319,7 +338,6 @@ export class SessionRuntime {
             this.instanceStore.upsert({
               config: {
                 id: this.activeInstanceId,
-                command,
                 selectedAiTool: this.activeTool?.name,
               },
               runtime: {
@@ -603,6 +621,18 @@ export class SessionRuntime {
     sessionId: string,
     preferredToolName?: string,
   ): Promise<void> {
+    if (this.tmuxSessionManager) {
+      try {
+        await this.tmuxSessionManager.registerSessionHooks(
+          sessionId,
+          process.pid,
+        );
+      } catch {}
+      try {
+        await this.startExternalChangeMonitoring(sessionId);
+      } catch {}
+    }
+
     this.forceNativeShellNextStart = false;
     this.selectedTmuxSessionId = sessionId;
     this.pendingLaunchToolName = preferredToolName;
@@ -1030,6 +1060,151 @@ export class SessionRuntime {
     }, 500);
   }
 
+  private async startExternalChangeMonitoring(
+    sessionId: string,
+  ): Promise<void> {
+    if (!this.tmuxSessionManager) {
+      return;
+    }
+
+    // Cache initial pane count and active pane commands
+    try {
+      const panes = await this.tmuxSessionManager.listPanes(sessionId);
+      this.knownPaneCounts.set(sessionId, panes.length);
+      const activePane = panes.find((p) => p.isActive);
+      if (activePane?.paneId) {
+        this.knownPaneCommands.set(
+          `${sessionId}:${activePane.paneId}`,
+          activePane.currentCommand ?? "",
+        );
+      }
+    } catch {
+      // Ignore — session might not be ready yet
+    }
+
+    // SIGUSR2 for immediate detection (from tmux hooks)
+    if (!this.sigusr2Handler) {
+      this.sigusr2Handler = () => {
+        void this.checkPaneChanges();
+      };
+      process.on("SIGUSR2", this.sigusr2Handler);
+    }
+
+    // onExternalPaneChange event listener
+    if (
+      !this.externalChangeListener &&
+      this.tmuxSessionManager.onExternalPaneChange
+    ) {
+      this.externalChangeListener =
+        this.tmuxSessionManager.onExternalPaneChange(() => {
+          void this.checkPaneChanges();
+        });
+    }
+
+    // Polling fallback for reliable detection (covers hook misses,
+    // tool exits, and externally-created sessions)
+    if (!this.paneMonitorInterval) {
+      this.paneMonitorInterval = setInterval(() => {
+        void this.checkPaneChanges();
+      }, 1500);
+    }
+  }
+
+  private stopExternalChangeMonitoring(): void {
+    if (this.sigusr2Handler) {
+      process.off("SIGUSR2", this.sigusr2Handler);
+      this.sigusr2Handler = undefined;
+    }
+
+    this.externalChangeListener?.dispose();
+    this.externalChangeListener = undefined;
+    if (this.paneMonitorInterval) {
+      clearInterval(this.paneMonitorInterval);
+      this.paneMonitorInterval = undefined;
+    }
+    this.knownPaneCounts.clear();
+    this.knownPaneCommands.clear();
+  }
+
+  private async checkPaneChanges(): Promise<void> {
+    if (!this.tmuxSessionManager) {
+      return;
+    }
+
+    // Discover all current sessions (handles externally-created sessions too)
+    let activeSessionId =
+      this.selectedTmuxSessionId ??
+      this.resolveTmuxSessionIdForInstance(this.activeInstanceId);
+
+    if (!activeSessionId) {
+      try {
+        const sessions = await this.tmuxSessionManager.discoverSessions();
+        if (sessions.length > 0) {
+          activeSessionId = sessions[0].id;
+        }
+      } catch {
+        // tmux not available
+      }
+    }
+
+    if (!activeSessionId) {
+      return;
+    }
+
+    try {
+      const panes = await this.tmuxSessionManager.listPanes(activeSessionId);
+      const currentCount = panes.length;
+      const previousCount = this.knownPaneCounts.get(activeSessionId);
+
+      // Detect new pane/window creation
+      if (previousCount !== undefined && currentCount > previousCount) {
+        this.knownPaneCounts.set(activeSessionId, currentCount);
+        // Cache commands for all panes
+        for (const pane of panes) {
+          this.knownPaneCommands.set(
+            `${activeSessionId}:${pane.paneId}`,
+            pane.currentCommand ?? "",
+          );
+        }
+        this.callbacks.showAiToolSelector(
+          activeSessionId,
+          activeSessionId,
+          true,
+        );
+        return;
+      }
+
+      this.knownPaneCounts.set(activeSessionId, currentCount);
+
+      // Detect AI tool exit → native shell
+      const activePane = panes.find((p) => p.isActive);
+      if (activePane) {
+        const key = `${activeSessionId}:${activePane.paneId}`;
+        const prevCmd = this.knownPaneCommands.get(key) ?? "";
+        const curCmd = activePane.currentCommand ?? "";
+
+        this.knownPaneCommands.set(key, curCmd);
+
+        // Trigger if the tool was running but now it's a plain shell
+        if (prevCmd && prevCmd !== curCmd && this.isPlainShell(curCmd)) {
+          this.callbacks.showAiToolSelector(
+            activeSessionId,
+            activeSessionId,
+            true,
+          );
+        }
+      }
+    } catch {
+      // Silently ignore — polling is best-effort
+    }
+  }
+
+  private isPlainShell(command: string): boolean {
+    const shellNames = ["zsh", "bash", "sh", "fish", "dash", "ksh", "tcsh"];
+    const basename = command.split("/").pop() ?? "";
+    return shellNames.includes(basename);
+  }
+
   private stopClipboardSync(): void {
     if (this.clipboardPollInterval !== undefined) {
       clearInterval(this.clipboardPollInterval);
@@ -1038,6 +1213,7 @@ export class SessionRuntime {
   }
 
   public dispose(): void {
+    this.stopExternalChangeMonitoring();
     this.stopClipboardSync();
     this.disposeListeners();
     this.activeInstanceSubscription?.dispose();

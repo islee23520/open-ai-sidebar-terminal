@@ -137,7 +137,7 @@ describe("TerminalDashboardProvider", () => {
             args: ["-c"],
           }),
           expect.objectContaining({
-            name: "claude-code",
+            name: "claude",
             label: "Claude Code",
           }),
           expect.objectContaining({

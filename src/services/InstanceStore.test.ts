@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { InstanceStore, InstanceRecord, InstanceId } from "./InstanceStore";
+import { InstanceStore, InstanceRecord } from "./InstanceStore";
 
 describe("InstanceStore", () => {
   let store: InstanceStore;
@@ -59,7 +59,6 @@ describe("InstanceStore", () => {
           id: "test-1",
           label: "Full Test",
           workspaceUri: "/path/to/workspace",
-          command: "opencode",
           args: ["--debug"],
           preferredPort: 8080,
           enableHttpApi: true,
@@ -87,7 +86,6 @@ describe("InstanceStore", () => {
 
       expect(retrieved).toBeDefined();
       expect(retrieved?.config.workspaceUri).toBe("/path/to/workspace");
-      expect(retrieved?.config.command).toBe("opencode");
       expect(retrieved?.config.args).toEqual(["--debug"]);
       expect(retrieved?.runtime.pid).toBe(12345);
       expect(retrieved?.health?.ok).toBe(true);

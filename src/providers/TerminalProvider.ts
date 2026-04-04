@@ -52,6 +52,8 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
           void this.switchToInstance(instanceId);
         },
         requestStartOpenCode: () => this.startOpenCode(),
+        showAiToolSelector: (sessionId, sessionName, forceShow) =>
+          this.showAiToolSelector(sessionId, sessionName, forceShow),
       },
     );
 
@@ -81,8 +83,8 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
         this.sessionRuntime.formatPastedImage(tempPath),
       launchAiTool: (sessionId, toolName, savePreference) =>
         this.launchAiTool(sessionId, toolName, savePreference),
-      showAiToolSelector: (sessionId, sessionName) =>
-        Promise.resolve(this.showAiToolSelector(sessionId, sessionName)),
+      showAiToolSelector: (sessionId, sessionName, forceShow) =>
+        Promise.resolve(this.showAiToolSelector(sessionId, sessionName, forceShow)),
       splitTmuxPane: (direction) => this.splitTmuxPane(direction),
       killTmuxPane: () => this.killTmuxPane(),
       getSelectedTmuxSessionId: () => this.getSelectedTmuxSessionId(),
@@ -339,7 +341,11 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
     this.messageRouter.handleMessage(message);
   }
 
-  public showAiToolSelector(sessionId: string, sessionName: string): void {
+  public showAiToolSelector(
+    sessionId: string,
+    sessionName: string,
+    forceShow = false,
+  ): void {
     const config = vscode.workspace.getConfiguration("opencodeTui");
     const instanceId =
       this.sessionRuntime.resolveInstanceIdFromSessionId(sessionId);
@@ -349,7 +355,7 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
     const tools: AiToolConfig[] = resolveAiToolConfigs(
       config.get("aiTools", []),
     );
-    if (savedTool) {
+    if (!forceShow && savedTool) {
       void this.launchAiTool(sessionId, savedTool, false);
       return;
     }

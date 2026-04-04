@@ -18,7 +18,7 @@ export class OutputChannelService {
 
   /**
    * Private constructor to enforce singleton pattern.
-   * Creates a LogOutputChannel named 'OpenCode TUI'.
+   * Creates a LogOutputChannel named 'Open AI Sidebar Terminal'.
    */
   private constructor() {
     this.channel = vscode.window.createOutputChannel("OpenCode Sidebar TUI", {

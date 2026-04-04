@@ -38,7 +38,7 @@ export interface MessageRouterProviderBridge {
     toolName: string,
     savePreference: boolean,
   ): Promise<void>;
-  showAiToolSelector(sessionId: string, sessionName: string): Promise<void>;
+  showAiToolSelector(sessionId: string, sessionName: string, forceShow?: boolean): Promise<void>;
   splitTmuxPane(direction: "h" | "v"): Promise<void>;
   killTmuxPane(): Promise<void>;
   getSelectedTmuxSessionId(): string | undefined;
@@ -139,7 +139,7 @@ export class MessageRouter {
         void this.provider.createTmuxWindow().then(() => {
           const sessionId = this.provider.getSelectedTmuxSessionId();
           if (sessionId) {
-            void this.provider.showAiToolSelector(sessionId, sessionId);
+            void this.provider.showAiToolSelector(sessionId, sessionId, true);
           }
         });
         break;
@@ -168,7 +168,7 @@ export class MessageRouter {
           void this.provider.splitTmuxPane(message.direction).then(() => {
             const sessionId = this.provider.getSelectedTmuxSessionId();
             if (sessionId) {
-              void this.provider.showAiToolSelector(sessionId, sessionId);
+              void this.provider.showAiToolSelector(sessionId, sessionId, true);
             }
           });
         }
@@ -553,7 +553,7 @@ export class MessageRouter {
     const entries: Array<{ name: string; cwd: string }> = [];
 
     for (const terminal of vscode.window.terminals) {
-      if (terminal.name === "OpenCode TUI") {
+      if (terminal.name === "Open AI Sidebar Terminal") {
         continue;
       }
 

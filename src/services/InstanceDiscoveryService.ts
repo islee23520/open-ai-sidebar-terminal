@@ -3,10 +3,11 @@ import { execFile } from "node:child_process";
 import { OpenCodeApiClient } from "./OpenCodeApiClient";
 import { InstanceConfig, InstanceRecord, InstanceStore } from "./InstanceStore";
 import { OutputChannelService } from "./OutputChannelService";
+import { getToolLaunchCommand, resolveAiToolConfigs } from "../types";
 
 const MIN_PORT = 16384;
 const MAX_PORT = 65535;
-const DEFAULT_COMMAND = "opencode -c";
+const DEFAULT_COMMAND = "opencode";
 const SPAWN_HEALTH_RETRIES = 10;
 const SPAWN_HEALTH_DELAY_MS = 200;
 
@@ -216,10 +217,15 @@ export class InstanceDiscoveryService {
   }
 
   private async spawnOpenCode(): Promise<OpenCodeInstance | undefined> {
-    const command = vscode.workspace
-      .getConfiguration("opencodeTui")
-      .get<string>("command", DEFAULT_COMMAND)
-      .trim();
+    const config = vscode.workspace.getConfiguration("opencodeTui");
+    const defaultToolName = config.get<string>("defaultAiTool", "opencode");
+    const toolConfigs = resolveAiToolConfigs(config.get("aiTools", []));
+    const tool =
+      toolConfigs.find((candidate) => candidate.name === defaultToolName) ??
+      toolConfigs[0];
+    const command = (
+      tool ? getToolLaunchCommand(tool) : DEFAULT_COMMAND
+    ).trim();
 
     if (!command) {
       return undefined;
@@ -228,7 +234,7 @@ export class InstanceDiscoveryService {
     const parsed = this.parseCommand(command);
     if (!parsed) {
       this.logger.error(
-        "Failed to parse opencodeTui.command for auto-spawn. Check quoting/escaping.",
+        "Failed to parse AI tool launch command for auto-spawn. Check tool path/args quoting.",
       );
       return undefined;
     }
