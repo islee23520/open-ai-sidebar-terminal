@@ -69,6 +69,7 @@ export const App: FunctionComponent<AppProps> = ({
         key: session.id,
         session,
         windows: payload.windows?.[session.id],
+        tools: payload.tools,
         onActivate: (sessionId): void => {
           handleAction({ action: "activate", sessionId });
         },

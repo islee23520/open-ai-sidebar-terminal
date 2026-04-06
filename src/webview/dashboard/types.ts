@@ -17,6 +17,7 @@ export interface TmuxDashboardPaneDto {
   title: string;
   isActive: boolean;
   currentCommand?: string;
+  resolvedTool?: string;
   windowId?: string;
   currentPath?: string;
   paneLeft?: number;

@@ -766,13 +766,15 @@ export class SessionRuntime {
     if (!this.tmuxSessionManager) {
       return undefined;
     }
-    const sessionId =
-      this.selectedTmuxSessionId ??
-      this.resolveTmuxSessionIdForInstance(this.activeInstanceId) ??
-      (await this.resolveFallbackTmuxSessionId());
+    // Always use current workspace session for toolbar actions
+    // Do NOT fall back to selectedTmuxSessionId which may be from another workspace
+    const workspacePath = this.resolveWorkspacePathForTmuxFallback();
+    const sessionId = workspacePath
+      ? await this.ensureWorkspaceSession(workspacePath)
+      : undefined;
     if (!sessionId) {
       this.logger.warn(
-        `[TerminalProvider] Cannot create tmux window: no tmux session resolved (selected=${this.selectedTmuxSessionId}, instance=${this.activeInstanceId})`,
+        `[TerminalProvider] Cannot create tmux window: no workspace session available (instance=${this.activeInstanceId})`,
       );
       return undefined;
     }
@@ -837,13 +839,15 @@ export class SessionRuntime {
     if (!this.tmuxSessionManager) {
       return undefined;
     }
-    const sessionId =
-      this.selectedTmuxSessionId ??
-      this.resolveTmuxSessionIdForInstance(this.activeInstanceId) ??
-      (await this.resolveFallbackTmuxSessionId());
+    // Always use current workspace session for toolbar actions
+    // Do NOT fall back to selectedTmuxSessionId which may be from another workspace
+    const workspacePath = this.resolveWorkspacePathForTmuxFallback();
+    const sessionId = workspacePath
+      ? await this.ensureWorkspaceSession(workspacePath)
+      : undefined;
     if (!sessionId) {
       this.logger.warn(
-        `[TerminalProvider] Cannot split tmux pane: no tmux session resolved (selected=${this.selectedTmuxSessionId}, instance=${this.activeInstanceId})`,
+        `[TerminalProvider] Cannot split tmux pane: no workspace session available (instance=${this.activeInstanceId})`,
       );
       return undefined;
     }

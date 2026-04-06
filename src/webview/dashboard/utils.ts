@@ -1,37 +1,59 @@
 import * as AiTool from "../ai-tool-selector";
+import { detectAiToolName } from "../../types";
 
 type AiToolConfig = AiTool.AiToolConfig;
+
+function findToolConfig(
+  toolName: string,
+  aiTools: AiToolConfig[],
+): AiToolConfig | undefined {
+  return aiTools.find(
+    (tool) =>
+      tool.name === toolName ||
+      tool.operator === toolName ||
+      (tool.aliases ?? []).includes(toolName),
+  );
+}
+
+function getToolBadgeText(tool: AiToolConfig): string {
+  const preset = {
+    opencode: "OC",
+    claude: "CC",
+    codex: "CX",
+  }[tool.name];
+  if (preset) {
+    return preset;
+  }
+
+  return tool.label
+    .split(/\s+/)
+    .map((part) => part.charAt(0))
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+export function renderToolBadge(
+  toolName: string | undefined,
+  aiTools: AiToolConfig[],
+): string {
+  if (!toolName || aiTools.length === 0) {
+    return "";
+  }
+
+  const tool = findToolConfig(toolName, aiTools);
+  if (!tool) {
+    return "";
+  }
+
+  return `<span class="pane-tool-badge ${escapeHtml(tool.name)}" title="${escapeHtml(tool.label)}">${escapeHtml(getToolBadgeText(tool))}</span>`;
+}
 
 export function detectToolIcon(
   currentCommand: string | undefined,
   aiTools: AiToolConfig[],
 ): string {
-  if (!currentCommand || aiTools.length === 0) {
-    return "";
-  }
-
-  for (const tool of aiTools) {
-    const patterns = [tool.name, tool.name + ".exe"];
-    if (tool.path) {
-      const basename = tool.path
-        .split("/")
-        .pop()
-        ?.split("\\")
-        .pop()
-        ?.replace(/\.exe$/i, "");
-      if (basename && basename !== tool.name) {
-        patterns.push(basename);
-      }
-    }
-
-    for (const pattern of patterns) {
-      if (currentCommand.indexOf(pattern) !== -1) {
-        return `<span class="pane-tool-badge ${escapeHtml(tool.name)}">${escapeHtml(tool.label.charAt(0))}</span>`;
-      }
-    }
-  }
-
-  return "";
+  return renderToolBadge(detectAiToolName(currentCommand, aiTools), aiTools);
 }
 
 export function escapeHtml(value: string | number | undefined): string {

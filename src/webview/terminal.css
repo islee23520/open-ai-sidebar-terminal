@@ -33,6 +33,16 @@ html {
   display: none;
 }
 
+.toolbar-controls {
+  display: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.toolbar-controls:not(.hidden) {
+  display: flex;
+}
+
 .tmux-btn {
   background: none;
   border: none;
@@ -72,23 +82,6 @@ html {
 }
 
 .pane-controls {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  background: var(--vscode-editorWidget-background, rgba(30, 30, 30, 0.85));
-  border: 1px solid var(--vscode-panel-border, #474747);
-  border-radius: 4px;
-  padding: 2px;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  pointer-events: none;
-}
-
-.pane-controls.hidden {
   display: none;
 }
 

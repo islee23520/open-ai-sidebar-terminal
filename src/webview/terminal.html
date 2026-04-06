@@ -15,28 +15,10 @@
       class="font-preload"
       aria-hidden="true"
       style="font-family: {{FONT_FAMILY}}"
-      >ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&amp;*()_+-=[]{}|;':&quot;,./&lt;&gt;?`~</span
-    >
+      >ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&amp;*()_+-=[]{}|;':&quot;,./&lt;&gt;?`~</span>
     <div id="tmux-toolbar" class="tmux-toolbar hidden">
       <span id="tmux-session-label" class="tmux-session-label"></span>
-      <button
-        type="button"
-        id="btn-open-dashboard"
-        class="tmux-btn"
-        aria-label="Open Terminal Manager"
-      >
-        &#9776;
-      </button>
-    </div>
-    <div
-      id="terminal-container"
-      data-font-size="{{FONT_SIZE}}"
-      data-font-family="{{FONT_FAMILY}}"
-      data-cursor-blink="{{CURSOR_BLINK}}"
-      data-cursor-style="{{CURSOR_STYLE}}"
-      data-scrollback="{{SCROLLBACK}}"
-    >
-      <div id="pane-controls" class="pane-controls hidden">
+      <div class="toolbar-controls">
         <button
           type="button"
           id="btn-split-v"
@@ -186,7 +168,23 @@
           </svg>
         </button>
       </div>
+      <button
+        type="button"
+        id="btn-open-dashboard"
+        class="tmux-btn"
+        aria-label="Open Terminal Manager"
+      >
+        &#9776;
+      </button>
     </div>
+    <div
+      id="terminal-container"
+      data-font-size="{{FONT_SIZE}}"
+      data-font-family="{{FONT_FAMILY}}"
+      data-cursor-blink="{{CURSOR_BLINK}}"
+      data-cursor-style="{{CURSOR_STYLE}}"
+      data-scrollback="{{SCROLLBACK}}"
+    ></div>
     <div id="dashboard-container" class="dashboard-container hidden">
       <div class="dashboard-header">
         <div class="dashboard-header-main">

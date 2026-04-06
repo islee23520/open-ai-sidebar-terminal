@@ -1,7 +1,13 @@
 import { execFile } from "node:child_process";
 import { basename, resolve } from "node:path";
 import * as vscode from "vscode";
-import { TmuxDashboardPaneDto, TmuxSession, TreeSnapshot } from "../types";
+import {
+  AiToolConfig,
+  detectAiToolName,
+  TmuxDashboardPaneDto,
+  TmuxSession,
+  TreeSnapshot,
+} from "../types";
 import { ILogger } from "./ILogger";
 
 const TMUX_LIST_FORMAT =
@@ -642,7 +648,7 @@ export class TmuxSessionManager {
   ): Promise<TmuxPane[]> {
     try {
       const format =
-        "#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_active}\t#{pane_current_command}\t#{window_id}\t#{pane_current_path}";
+        "#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_active}\t#{pane_current_command}\t#{pane_pid}\t#{window_id}\t#{pane_current_path}";
       const args = ["list-panes"];
       if (options?.activeWindowOnly) {
         const windows = await this.listWindows(sessionId);
@@ -759,10 +765,11 @@ export class TmuxSessionManager {
   public async listWindowPaneGeometry(
     sessionId: string,
     windowId: string,
+    tools: readonly AiToolConfig[] = [],
   ): Promise<TmuxDashboardPaneDto[]> {
     try {
       const format =
-        "#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_active}\t#{pane_current_command}\t#{window_id}\t#{pane_current_path}\t#{pane_left}\t#{pane_top}\t#{pane_width}\t#{pane_height}";
+        "#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_active}\t#{pane_current_command}\t#{pane_pid}\t#{window_id}\t#{pane_current_path}\t#{pane_left}\t#{pane_top}\t#{pane_width}\t#{pane_height}";
       const stdout = await this.runTmux([
         "list-panes",
         "-t",
@@ -770,7 +777,7 @@ export class TmuxSessionManager {
         "-F",
         format,
       ]);
-      return stdout
+      const panes = stdout
         .split(/\r?\n/)
         .map((line) => line.trim())
         .filter((line) => line.length > 0)
@@ -781,6 +788,7 @@ export class TmuxSessionManager {
             title,
             active,
             currentCommand,
+            panePid,
             wid,
             currentPath,
             paneLeft,
@@ -796,6 +804,9 @@ export class TmuxSessionManager {
             ...(currentCommand !== undefined && currentCommand !== ""
               ? { currentCommand }
               : {}),
+            ...(panePid !== undefined && panePid !== ""
+              ? { panePid: Number(panePid) }
+              : {}),
             ...(wid !== undefined && wid !== "" ? { windowId: wid } : {}),
             ...(currentPath !== undefined && currentPath !== ""
               ? { currentPath }
@@ -806,6 +817,97 @@ export class TmuxSessionManager {
             paneHeight: Number(paneHeight),
           };
         });
+      const toolsArr = Array.isArray(tools) ? tools : [];
+
+      // Get process tree to resolve tools from descendant processes
+      const processMap = new Map<number, { ppid: number; command: string }>();
+      try {
+        const psOutput = await new Promise<string>((resolve, reject) => {
+          this.runExecFile(
+            "ps",
+            ["-ax", "-o", "pid=,ppid=,command="],
+            (error, stdout) => {
+              if (error) {
+                reject(error);
+              } else {
+                resolve(stdout?.toString() ?? "");
+              }
+            },
+          );
+        });
+
+        psOutput.split(/\r?\n/).forEach((line) => {
+          const trimmed = line.trim();
+          if (trimmed.length === 0) return;
+          const parts = trimmed.match(/^\s*(\d+)\s+(\d+)\s+(.+)$/);
+          if (parts) {
+            const pid = parseInt(parts[1], 10);
+            const ppid = parseInt(parts[2], 10);
+            const command = parts[3];
+            processMap.set(pid, { ppid, command });
+          }
+        });
+      } catch {
+        // Ignore ps errors, just use currentCommand
+      }
+
+      // Build child map: parentPid -> childPids[]
+      const childMap = new Map<number, number[]>();
+      processMap.forEach((info, pid) => {
+        const children = childMap.get(info.ppid) || [];
+        children.push(pid);
+        childMap.set(info.ppid, children);
+      });
+
+      // Get all descendant commands recursively
+      const getAllDescendantCommands = (parentPid: number): string[] => {
+        const commands: string[] = [];
+        const queue = [parentPid];
+        const visited = new Set<number>();
+
+        while (queue.length > 0) {
+          const currentPid = queue.shift()!;
+          if (visited.has(currentPid)) continue;
+          visited.add(currentPid);
+
+          const info = processMap.get(currentPid);
+          if (info && currentPid !== parentPid) {
+            commands.push(info.command);
+          }
+
+          const children = childMap.get(currentPid) || [];
+          for (const child of children) {
+            if (!visited.has(child)) {
+              queue.push(child);
+            }
+          }
+        }
+        return commands;
+      };
+
+      const panesWithTools = panes.map((pane) => {
+        let resolvedTool: string | undefined;
+
+        // First check currentCommand
+        if (pane.currentCommand) {
+          resolvedTool = detectAiToolName(pane.currentCommand, toolsArr);
+        }
+
+        // If not found, check descendant processes
+        if (!resolvedTool && pane.panePid && processMap.size > 0) {
+          const descendantCommands = getAllDescendantCommands(pane.panePid);
+          for (const cmd of descendantCommands) {
+            resolvedTool = detectAiToolName(cmd, toolsArr);
+            if (resolvedTool) break;
+          }
+        }
+
+        return {
+          ...pane,
+          ...(resolvedTool ? { resolvedTool } : {}),
+        };
+      });
+      return panesWithTools;
     } catch (error) {
       if (this.isNoSessionsError(error)) {
         return [];

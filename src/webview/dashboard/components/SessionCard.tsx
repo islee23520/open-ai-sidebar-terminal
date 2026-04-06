@@ -1,12 +1,16 @@
 import { h, FunctionComponent } from "preact";
+import * as AiTool from "../../ai-tool-selector";
 
 import { TmuxDashboardSessionDto, TmuxDashboardWindowDto } from "../types";
-import { escapeHtml } from "../utils";
+import { escapeHtml, renderToolBadge } from "../utils";
 import { SessionMinimap } from "./SessionPreview";
+
+type AiToolConfig = AiTool.AiToolConfig;
 
 export interface SessionCardProps {
   session: TmuxDashboardSessionDto;
   windows?: TmuxDashboardWindowDto[];
+  tools?: AiToolConfig[];
   onActivate: (sessionId: string) => void;
   onShowAiToolSelector: (sessionId: string, sessionName: string) => void;
   onKill: (sessionId: string) => void;
@@ -15,12 +19,24 @@ export interface SessionCardProps {
 export const SessionCard: FunctionComponent<SessionCardProps> = ({
   session,
   windows,
+  tools = [],
   onActivate,
   onShowAiToolSelector,
   onKill,
 }) => {
   const activeClass = session.isActive ? " active" : "";
   const statusText = session.isActive ? "Current" : "Available";
+  const resolvedTools = Array.from(
+    new Set(
+      (windows ?? [])
+        .flatMap((window) => window.panes)
+        .map((pane) => pane.resolvedTool)
+        .filter((toolName): toolName is string => Boolean(toolName)),
+    ),
+  );
+  const toolBadgesHtml = resolvedTools
+    .map((toolName) => renderToolBadge(toolName, tools))
+    .join("");
 
   return h(
     "div",
@@ -40,10 +56,21 @@ export const SessionCard: FunctionComponent<SessionCardProps> = ({
         h("strong", {
           dangerouslySetInnerHTML: { __html: escapeHtml(session.name) },
         }),
-        h("div", {
-          class: "status",
-          dangerouslySetInnerHTML: { __html: escapeHtml(statusText) },
-        }),
+        h(
+          "div",
+          { class: "row", style: "justify-content: flex-start; gap: 6px;" },
+          h("div", {
+            class: "status",
+            dangerouslySetInnerHTML: { __html: escapeHtml(statusText) },
+          }),
+          toolBadgesHtml
+            ? h("div", {
+                class: "row",
+                style: "justify-content: flex-start; gap: 4px;",
+                dangerouslySetInnerHTML: { __html: toolBadgesHtml },
+              })
+            : null,
+        ),
       ),
       h(
         "div",

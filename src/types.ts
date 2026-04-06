@@ -134,8 +134,16 @@ export function getToolLaunchCommand(tool: AiToolConfig): string {
 
 /** Get detection patterns for matching pane_current_command */
 export function getToolDetectionPatterns(tool: AiToolConfig): string[] {
-  const patterns: string[] = [tool.name];
-  patterns.push(`${tool.name}.exe`);
+  const patterns = new Set<string>([tool.name, `${tool.name}.exe`]);
+  if (tool.operator) {
+    patterns.add(tool.operator);
+    patterns.add(`${tool.operator}.exe`);
+  }
+  for (const alias of tool.aliases ?? []) {
+    patterns.add(alias);
+    patterns.add(`${alias}.exe`);
+  }
+  patterns.add(tool.label);
   if (tool.path) {
     const basename = tool.path
       .split("/")
@@ -144,10 +152,31 @@ export function getToolDetectionPatterns(tool: AiToolConfig): string[] {
       .pop()
       ?.replace(/\.exe$/i, "");
     if (basename && basename !== tool.name) {
-      patterns.push(basename);
+      patterns.add(basename);
     }
   }
-  return patterns;
+  return [...patterns];
+}
+
+export function detectAiToolName(
+  text: string | undefined,
+  tools: readonly AiToolConfig[],
+): string | undefined {
+  const haystack = text?.toLowerCase();
+  if (!haystack) {
+    return undefined;
+  }
+
+  for (const tool of tools) {
+    const patterns = getToolDetectionPatterns(tool).map((pattern) =>
+      pattern.toLowerCase(),
+    );
+    if (patterns.some((pattern) => pattern && haystack.includes(pattern))) {
+      return tool.name;
+    }
+  }
+
+  return undefined;
 }
 
 export type NativeShellDto = {
@@ -166,7 +195,7 @@ export type TmuxDashboardActionMessage =
   | { action: "activateNativeShell"; instanceId: string }
   | { action: "killNativeShell"; instanceId: string }
   | { action: "activate"; sessionId: string }
-  | { action: "showAiToolSelector"; sessionId: string; sessionName: string }
+  | { action: "showAiToolSelector"; sessionId: string; sessionName: string; targetPaneId?: string }
   | { action: "expandPanes"; sessionId: string }
   | { action: "createWindow"; sessionId: string }
   | { action: "nextWindow"; sessionId: string }
@@ -212,6 +241,7 @@ export type TmuxDashboardActionMessage =
       sessionId: string;
       tool: string;
       savePreference: boolean;
+      targetPaneId?: string;
     };
 
 export type TmuxDashboardSessionDto = {
@@ -229,6 +259,8 @@ export type TmuxDashboardPaneDto = {
   title: string;
   isActive: boolean;
   currentCommand?: string;
+  panePid?: number;
+  resolvedTool?: string;
   windowId?: string;
   currentPath?: string;
   paneLeft?: number;

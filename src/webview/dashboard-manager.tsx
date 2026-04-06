@@ -7,6 +7,7 @@ declare function acquireVsCodeApi(): {
 import { h, render } from "preact";
 
 import * as AiTool from "./ai-tool-selector";
+import * as TmuxCmd from "./tmux-command-dropdown";
 import { App } from "./dashboard/components/App";
 import { DashboardPayload, HostMessage } from "./dashboard/types";
 
@@ -132,11 +133,15 @@ window.addEventListener("message", (event) => {
   }
 
   if (message.type === "showAiToolSelector") {
+    const selectorMessage = message as DashboardHostMessage & {
+      targetPaneId?: string;
+    };
     AiTool.show(
-      message.sessionId || "",
-      message.sessionName || "",
-      message.defaultTool,
-      Array.isArray(message.tools) ? message.tools : aiTools,
+      selectorMessage.sessionId || "",
+      selectorMessage.sessionName || "",
+      selectorMessage.defaultTool,
+      Array.isArray(selectorMessage.tools) ? selectorMessage.tools : aiTools,
+      selectorMessage.targetPaneId,
     );
   }
 });
@@ -217,6 +222,29 @@ document.addEventListener("click", (event) => {
 
     return;
   }
+  // Tmux command dropdown trigger
+  if (target.closest("#tmux-command-trigger")) {
+    if (TmuxCmd.isVisible()) {
+      TmuxCmd.hide();
+    } else {
+      const sessions = Array.isArray(lastPayload.sessions) ? lastPayload.sessions : [];
+      const activeSession = sessions.find(s => s.isActive);
+      TmuxCmd.show(activeSession?.id ?? null, aiCallbacks);
+    }
+    return;
+  }
+
+  // Tmux command dropdown item click
+  if (target.closest(".tmux-cmd-item") && !target.closest(".tmux-cmd-item.disabled")) {
+    TmuxCmd.handleClick(target);
+    return;
+  }
+
+  // Tmux command dropdown click-outside close
+  if (TmuxCmd.isVisible() && !target.closest("#tmux-command-dropdown") && !target.closest("#tmux-command-trigger")) {
+    TmuxCmd.hide();
+    return;
+  }
 
   if (!(target instanceof HTMLButtonElement)) {
     return;
@@ -235,6 +263,9 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
+  if (TmuxCmd.handleKeydown(event)) {
+    return;
+  }
   if (AiTool.handleKeydown(event, aiCallbacks)) {
     return;
   }

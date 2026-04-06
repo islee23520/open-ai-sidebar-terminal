@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { execFile } from "node:child_process";
 import { TmuxSessionManager, TmuxUnavailableError } from "./TmuxSessionManager";
+import { DEFAULT_AI_TOOLS } from "../types";
 
 vi.mock("node:child_process", () => ({
   execFile: vi.fn(),
@@ -536,7 +537,7 @@ describe("TmuxSessionManager", () => {
         "-t",
         "test-session:@1",
         "-F",
-        "#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_active}\t#{pane_current_command}\t#{window_id}\t#{pane_current_path}",
+        "#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_active}\t#{pane_current_command}\t#{pane_pid}\t#{window_id}\t#{pane_current_path}"
       ]);
     });
 
@@ -588,6 +589,101 @@ describe("TmuxSessionManager", () => {
           currentPath: "/workspaces/repo-a/tools",
         },
       ]);
+    });
+
+    it("parses pane pid from window geometry responses", async () => {
+      mockExecSequence([
+        {
+          stdout:
+            "%7\t0\tshell\t1\tnode\t4242\t@3\t/workspaces/repo-a\t0\t0\t120\t30",
+        },
+      ]);
+
+      const panes = await manager.listWindowPaneGeometry("test-session", "@3");
+
+      expect(panes).toEqual([
+        {
+          paneId: "%7",
+          index: 0,
+          title: "shell",
+          isActive: true,
+          currentCommand: "node",
+          panePid: 4242,
+          windowId: "@3",
+          currentPath: "/workspaces/repo-a",
+          paneLeft: 0,
+          paneTop: 0,
+          paneWidth: 120,
+          paneHeight: 30,
+        },
+      ]);
+      expect(vi.mocked(execFile).mock.calls[0]?.[1]).toEqual([
+        "list-panes",
+        "-t",
+        "test-session:@3",
+        "-F",
+        "#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_active}\t#{pane_current_command}\t#{pane_pid}\t#{window_id}\t#{pane_current_path}\t#{pane_left}\t#{pane_top}\t#{pane_width}\t#{pane_height}",
+      ]);
+    });
+
+    it("resolves node-based pane tools from descendant process commands", async () => {
+      mockExecSequence([
+        {
+          stdout: [
+            "%0\t0\tOC | ULTRAWORK MODE ENABLED!\t1\tnode\t42783\t@0\t/workspaces/repo-a\t0\t0\t100\t20",
+            "%1\t1\t⠇ opencode-sidebar-tui\t0\tnode\t13140\t@0\t/workspaces/repo-a\t100\t0\t100\t20",
+          ].join("\n"),
+        },
+        {
+          stdout: [
+            "42783 41338 -zsh",
+            "31251 42783 node /Users/ilseoblee/.bun/bin/opencode -c",
+            "13140 41338 -zsh",
+            "19171 13140 node /opt/homebrew/bin/omx --madmax --high",
+            '19476 19171 codex --dangerously-bypass-approvals-and-sandbox -c model_reasoning_effort="high"',
+          ].join("\n"),
+        },
+      ]);
+
+      const panes = await manager.listWindowPaneGeometry(
+        "test-session",
+        "@0",
+        DEFAULT_AI_TOOLS,
+      );
+
+      expect(panes).toEqual([
+        {
+          paneId: "%0",
+          index: 0,
+          title: "OC | ULTRAWORK MODE ENABLED!",
+          isActive: true,
+          currentCommand: "node",
+          panePid: 42783,
+          resolvedTool: "opencode",
+          windowId: "@0",
+          currentPath: "/workspaces/repo-a",
+          paneLeft: 0,
+          paneTop: 0,
+          paneWidth: 100,
+          paneHeight: 20,
+        },
+        {
+          paneId: "%1",
+          index: 1,
+          title: "⠇ opencode-sidebar-tui",
+          isActive: false,
+          currentCommand: "node",
+          panePid: 13140,
+          resolvedTool: "codex",
+          windowId: "@0",
+          currentPath: "/workspaces/repo-a",
+          paneLeft: 100,
+          paneTop: 0,
+          paneWidth: 100,
+          paneHeight: 20,
+        },
+      ]);
+      expect(vi.mocked(execFile).mock.calls[1]?.[0]).toBe("ps");
     });
 
     it("lists windows for a session", async () => {

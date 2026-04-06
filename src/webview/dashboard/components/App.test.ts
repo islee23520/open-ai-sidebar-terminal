@@ -60,4 +60,73 @@ describe("dashboard App", () => {
     });
     expect(aiToolMock.show).not.toHaveBeenCalled();
   });
+
+  it("renders resolved pane tool badges for node-based panes", () => {
+    render(
+      h(App, {
+        payload: {
+          sessions: [
+            {
+              id: "repo-a",
+              name: "Repo A",
+              workspace: "repo-a",
+              isActive: true,
+              preview: "",
+            },
+          ],
+          windows: {
+            "repo-a": [
+              {
+                windowId: "@1",
+                index: 0,
+                name: "main",
+                isActive: true,
+                panes: [
+                  {
+                    paneId: "%1",
+                    index: 0,
+                    title: "shell",
+                    isActive: true,
+                    currentCommand: "node",
+                    resolvedTool: "opencode",
+                  },
+                  {
+                    paneId: "%2",
+                    index: 1,
+                    title: "shell",
+                    isActive: false,
+                    currentCommand: "node",
+                    resolvedTool: "codex",
+                  },
+                ],
+              },
+            ],
+          },
+          tools: [
+            {
+              name: "opencode",
+              label: "OpenCode",
+              path: "",
+              args: ["-c"],
+              operator: "opencode",
+            },
+            {
+              name: "codex",
+              label: "Codex",
+              path: "",
+              args: [],
+              operator: "codex",
+            },
+          ],
+          workspace: "repo-a",
+        },
+        onAction: vi.fn(),
+      }),
+      document.body,
+    );
+
+    const badges = Array.from(document.querySelectorAll(".pane-tool-badge"));
+    expect(badges).toHaveLength(2);
+    expect(badges.map((badge) => badge.textContent)).toEqual(["OC", "CX"]);
+  });
 });

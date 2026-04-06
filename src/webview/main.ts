@@ -21,7 +21,7 @@ const callbacks: MessageHandlerCallbacks = {
   onActiveSession(message) {
     const toolbar = document.getElementById("tmux-toolbar");
     const label = document.getElementById("tmux-session-label");
-    const paneControls = document.getElementById("pane-controls");
+    const toolbarControls = document.querySelector(".toolbar-controls");
     const aiToolBtn = document.getElementById("btn-ai-tool");
     if ("sessionName" in message && message.sessionName) {
       if (toolbar) toolbar.classList.remove("hidden");
@@ -32,13 +32,17 @@ const callbacks: MessageHandlerCallbacks = {
             : "";
         label.textContent = message.sessionName + windowSuffix;
       }
-      if (paneControls) paneControls.classList.remove("hidden");
+      if (toolbarControls) {
+        toolbarControls.classList.remove("hidden");
+      }
       if (aiToolBtn) {
         aiToolBtn.style.display = message.paneHasAiTool ? "none" : "";
       }
     } else {
       if (toolbar) toolbar.classList.add("hidden");
-      if (paneControls) paneControls.classList.add("hidden");
+      if (toolbarControls) {
+        toolbarControls.classList.add("hidden");
+      }
       if (aiToolBtn) aiToolBtn.style.display = "none";
     }
   },
@@ -49,6 +53,7 @@ const callbacks: MessageHandlerCallbacks = {
       message.sessionName,
       message.defaultTool,
       message.tools,
+      message.targetPaneId,
     );
   },
 
@@ -108,6 +113,7 @@ const aiCallbacks = {
         sessionId: String(m.sessionId ?? ""),
         tool: String(m.tool ?? ""),
         savePreference: Boolean(m.savePreference),
+        targetPaneId: m.targetPaneId ? String(m.targetPaneId) : undefined,
       });
     }
   },

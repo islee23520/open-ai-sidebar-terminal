@@ -320,7 +320,7 @@ describe("TerminalDashboardProvider", () => {
       sessionName: "Repo A",
     });
 
-    expect(showSpy).toHaveBeenCalledWith("repo-a", "Repo A", true);
+    expect(showSpy).toHaveBeenCalledWith("repo-a", "Repo A", true, undefined);
     expect(view.webview.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "showAiToolSelector",

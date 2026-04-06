@@ -160,6 +160,10 @@ export class TerminalDashboardProvider
 
       const panesMap: Record<string, TmuxDashboardPaneDto[]> = {};
       const windowsMap: Record<string, TmuxDashboardWindowDto[]> = {};
+      const config = vscode.workspace.getConfiguration("opencodeTui");
+      const tools: AiToolConfig[] = resolveAiToolConfigs(
+        config.get("aiTools", []),
+      );
       for (const session of filtered) {
         try {
           const windows = await this.tmuxSessionManager.listWindows(session.id);
@@ -168,6 +172,7 @@ export class TerminalDashboardProvider
               this.tmuxSessionManager.listWindowPaneGeometry(
                 session.id,
                 w.windowId,
+                tools,
               ),
             ),
           );
@@ -193,11 +198,6 @@ export class TerminalDashboardProvider
         isActive: session.isActive,
         paneCount: panesMap[session.id]?.length ?? 0,
       }));
-
-      const config = vscode.workspace.getConfiguration("opencodeTui");
-      const tools: AiToolConfig[] = resolveAiToolConfigs(
-        config.get("aiTools", []),
-      );
 
       const nativeShells = this.buildNativeShellDtos(
         this.showAllSessions ? undefined : workspacePath,
@@ -312,13 +312,29 @@ export class TerminalDashboardProvider
         }
         await this.postSessionsToWebview();
         return;
-      case "showAiToolSelector":
-        await this.showAiToolSelector(
-          message.sessionId,
-          message.sessionName,
+      case "showAiToolSelector": {
+        // Get the active pane to use as the default target for AI tool launch
+        let targetPaneId: string | undefined;
+        try {
+          const panes = await this.tmuxSessionManager.listPanes(
+            message.sessionId,
+            { activeWindowOnly: true }
+          );
+          const activePane = panes.find((pane) => pane.isActive);
+          if (activePane) {
+            targetPaneId = activePane.paneId;
+          }
+        } catch {
+          // If we can't get panes, continue without a specific target
+        }
+await this.showAiToolSelector(
+message.sessionId,
+message.sessionName,
           true,
-        );
+          targetPaneId,
+);
         return;
+      }
       case "expandPanes":
         await this.postSessionsToWebview();
         return;
