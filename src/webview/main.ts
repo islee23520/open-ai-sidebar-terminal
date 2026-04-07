@@ -38,6 +38,10 @@ const callbacks: MessageHandlerCallbacks = {
       if (aiToolBtn) {
         aiToolBtn.style.display = message.paneHasAiTool ? "none" : "";
       }
+      const killPaneBtn = document.getElementById("btn-kill-pane");
+      if (killPaneBtn) {
+        killPaneBtn.toggleAttribute("disabled", !message.canKillPane);
+      }
     } else {
       if (toolbar) toolbar.classList.add("hidden");
       if (toolbarControls) {
