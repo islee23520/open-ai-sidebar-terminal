@@ -343,6 +343,7 @@ export type HostMessage =
       windowIndex?: number;
       windowName?: string;
       paneHasAiTool?: boolean;
+      canKillPane?: boolean;
     }
   | { type: "activeSession" }
   | {

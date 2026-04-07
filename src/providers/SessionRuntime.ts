@@ -57,6 +57,7 @@ export class SessionRuntime {
   private knownPaneCommands: Map<string, string> = new Map();
   private knownActiveWindowId?: string;
   private _lastPaneHasAiTool?: boolean;
+  private _lastCanKillPane?: boolean;
   private sigusr2FiredSinceLastCheck = false;
   private externalChangeListener?: vscode.Disposable;
   private paneMonitorInterval?: ReturnType<typeof setInterval>;
@@ -921,8 +922,21 @@ export class SessionRuntime {
       const panes = await this.tmuxSessionManager.listPanes(sessionId, {
         activeWindowOnly: true,
       });
-      if (panes.length <= 1) {
+      if (panes.length > 1) {
+        const activePane = panes.find((p) => p.isActive) ?? panes[0];
+        if (activePane) {
+          await this.tmuxSessionManager.killPane(activePane.paneId);
+        }
         return;
+      }
+      // Single pane — kill the window instead (preserves session if multiple windows)
+      const windows = await this.tmuxSessionManager.listWindows(sessionId);
+      if (windows.length <= 1) {
+        return;
+      }
+      const activeWindow = windows.find((w) => w.isActive) ?? windows[0];
+      if (activeWindow) {
+        await this.tmuxSessionManager.killWindow(activeWindow.windowId);
       }
       const activePane = panes.find((p) => p.isActive) ?? panes[0];
       if (activePane) {
@@ -1305,12 +1319,14 @@ export class SessionRuntime {
       const paneHasAiTool =
         paneCommand !== "" && !this.isPlainShell(paneCommand);
 
-      if (windowChanged) {
-        this.knownActiveWindowId = activeWindow.windowId;
-      }
+      const canKillPane = panes.length > 1 || windows.length > 1;
 
-      if (windowChanged || paneHasAiTool !== this._lastPaneHasAiTool) {
+      if (windowChanged || paneHasAiTool !== this._lastPaneHasAiTool || canKillPane !== this._lastCanKillPane) {
+        if (windowChanged) {
+          this.knownActiveWindowId = activeWindow.windowId;
+        }
         this._lastPaneHasAiTool = paneHasAiTool;
+        this._lastCanKillPane = canKillPane;
         this.callbacks.postMessage({
           type: "activeSession",
           sessionName: activeSessionId,
@@ -1318,6 +1334,7 @@ export class SessionRuntime {
           windowIndex: activeWindow?.index,
           windowName: activeWindow?.name,
           paneHasAiTool,
+          canKillPane,
         });
       }
     } catch {

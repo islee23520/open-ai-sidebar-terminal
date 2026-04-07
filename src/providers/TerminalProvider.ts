@@ -385,12 +385,17 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
       this.sessionRuntime.resolveInstanceIdFromSessionId(sessionId);
     this.sessionRuntime.rememberSelectedTool(tool.name, instanceId);
 
+    const effectiveSessionId =
+      this.sessionRuntime.resolveTmuxSessionIdForInstance(instanceId) ??
+      sessionId;
+
     try {
       let paneIdToUse: string | undefined = targetPaneId;
       if (!paneIdToUse) {
-        const panes = await this.tmuxSessionManager.listPanes(sessionId, {
-          activeWindowOnly: true,
-        });
+        const panes = await this.tmuxSessionManager.listPanes(
+          effectiveSessionId,
+          { activeWindowOnly: true },
+        );
         const targetPane = panes.find((p) => p.isActive) ?? panes[0];
         paneIdToUse = targetPane?.paneId;
       }
@@ -399,6 +404,10 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
         await this.tmuxSessionManager.sendTextToPane(
           paneIdToUse,
           operator.getLaunchCommand(tool),
+        );
+      } else {
+        this.logger.warn(
+          `[TerminalProvider] launchAiTool skipped: no target pane for session ${effectiveSessionId}`,
         );
       }
     } catch (error) {
@@ -421,6 +430,9 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
     const config = vscode.workspace.getConfiguration("opencodeTui");
     const instanceId =
       this.sessionRuntime.resolveInstanceIdFromSessionId(sessionId);
+    const effectiveSessionId =
+      this.sessionRuntime.resolveTmuxSessionIdForInstance(instanceId) ??
+      sessionId;
     const savedTool =
       this.instanceStore?.get(instanceId)?.config.selectedAiTool ??
       config.get<string>("defaultAiTool", "");
@@ -428,12 +440,12 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
       config.get("aiTools", []),
     );
     if (!forceShow && savedTool) {
-      void this.launchAiTool(sessionId, savedTool, false, targetPaneId);
+      void this.launchAiTool(effectiveSessionId, savedTool, false, targetPaneId);
       return;
     }
     this.postWebviewMessage({
       type: "showAiToolSelector",
-      sessionId,
+      sessionId: effectiveSessionId,
       sessionName,
       defaultTool: undefined,
       tools,
