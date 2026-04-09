@@ -40,7 +40,7 @@ describe("InstanceDiscoveryService", () => {
       {
         ProcessId: 101,
         Name: "opencode.exe",
-        CommandLine: "opencode -c --port 17001",
+        CommandLine: "opencode --port 17001",
       },
       {
         ProcessId: 202,
@@ -109,6 +109,12 @@ describe("InstanceDiscoveryService", () => {
       get: vi.fn((key: string, defaultValue?: unknown) => {
         if (key === "enableAutoSpawn") {
           return true;
+        }
+        if (key === "defaultAiTool") {
+          return "opencode";
+        }
+        if (key === "aiTools") {
+          return [];
         }
         return defaultValue;
       }),
@@ -182,7 +188,7 @@ describe("InstanceDiscoveryService", () => {
   it("uses Unix process scanning and port extraction patterns", async () => {
     mockExecOutput(
       [
-        "777 opencode -c --http-port 22001",
+        "777 opencode --http-port 22001",
         "888 opencode --port 22002",
         "999 opencode _EXTENSION_OPENCODE_PORT=22003",
       ].join("\n"),
@@ -233,6 +239,12 @@ describe("InstanceDiscoveryService", () => {
       get: vi.fn((key: string, defaultValue?: unknown) => {
         if (key === "enableAutoSpawn") {
           return false;
+        }
+        if (key === "defaultAiTool") {
+          return "opencode";
+        }
+        if (key === "aiTools") {
+          return [];
         }
         return defaultValue;
       }),
@@ -299,9 +311,7 @@ describe("InstanceDiscoveryService", () => {
   });
 
   it("returns undefined for malformed quoted command", () => {
-    const parsed = (service as any).parseCommand(
-      '"/path with spaces/opencode -c',
-    );
+    const parsed = (service as any).parseCommand('"/path with spaces/opencode');
 
     expect(parsed).toBeUndefined();
   });

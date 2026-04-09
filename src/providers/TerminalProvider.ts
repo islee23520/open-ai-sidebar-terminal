@@ -10,7 +10,12 @@ import { OutputChannelService } from "../services/OutputChannelService";
 import { InstanceId, InstanceStore } from "../services/InstanceStore";
 import { TmuxSessionManager } from "../services/TmuxSessionManager";
 import { AiToolFileReference } from "../services/aiTools/AiToolOperator";
-import { AiToolConfig, resolveAiToolConfigs } from "../types";
+import {
+  AiToolConfig,
+  TMUX_RAW_ALLOWED_SUBCOMMANDS,
+  resolveAiToolConfigs,
+} from "../types";
+import type { TmuxRawSubcommand } from "../types";
 import { AiToolOperatorRegistry } from "../services/aiTools/AiToolOperatorRegistry";
 import { MessageRouter, MessageRouterProviderBridge } from "./MessageRouter";
 import { SessionRuntime } from "./SessionRuntime";
@@ -19,6 +24,7 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "opencodeTui";
 
   private _view?: vscode.WebviewView;
+  private _panel?: vscode.WebviewPanel;
   private readonly contextSharingService: ContextSharingService;
   private readonly logger = OutputChannelService.getInstance();
   private readonly aiToolRegistry: AiToolOperatorRegistry;
@@ -52,6 +58,8 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
           void this.switchToInstance(instanceId);
         },
         requestStartOpenCode: () => this.startOpenCode(),
+        showAiToolSelector: (sessionId, sessionName, forceShow) =>
+          this.showAiToolSelector(sessionId, sessionName, forceShow),
       },
     );
 
@@ -63,6 +71,8 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
       createTmuxWindow: () => this.createTmuxWindow(),
       navigateTmuxWindow: (direction) => this.navigateTmuxWindow(direction),
       navigateTmuxSession: (direction) => this.navigateTmuxSession(direction),
+      toggleDashboard: () => this.toggleDashboard(),
+      restart: () => this.restart(),
       switchToNativeShell: () => this.switchToNativeShell(),
       pasteText: (text) => this.pasteText(text),
       getActiveInstanceId: () => this.getActiveInstanceId(),
@@ -79,13 +89,24 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
         this.sessionRuntime.formatDroppedFiles(paths, { useAtSyntax }),
       formatPastedImage: (tempPath) =>
         this.sessionRuntime.formatPastedImage(tempPath),
-      launchAiTool: (sessionId, toolName, savePreference) =>
-        this.launchAiTool(sessionId, toolName, savePreference),
-      showAiToolSelector: (sessionId, sessionName) =>
-        Promise.resolve(this.showAiToolSelector(sessionId, sessionName)),
+      launchAiTool: (sessionId, toolName, savePreference, targetPaneId) =>
+        this.launchAiTool(sessionId, toolName, savePreference, targetPaneId),
+      showAiToolSelector: (sessionId, sessionName, forceShow, targetPaneId) =>
+        Promise.resolve(
+          this.showAiToolSelector(
+            sessionId,
+            sessionName,
+            forceShow,
+            targetPaneId,
+          ),
+        ),
+      executeRawTmuxCommand: (subcommand, args) =>
+        this.executeRawTmuxCommand(subcommand, args),
       splitTmuxPane: (direction) => this.splitTmuxPane(direction),
+      zoomTmuxPane: () => this.zoomTmuxPane(),
       killTmuxPane: () => this.killTmuxPane(),
       getSelectedTmuxSessionId: () => this.getSelectedTmuxSessionId(),
+      isTmuxAvailable: () => !!this.tmuxSessionManager,
     };
 
     this.messageRouter = new MessageRouter(
@@ -175,7 +196,55 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
   }
 
   public focus(): void {
+    this._panel?.reveal(vscode.ViewColumn.Active);
     this.postWebviewMessage({ type: "focusTerminal" });
+  }
+
+  public openInEditorTab(): void {
+    if (this._panel) {
+      this._panel.reveal(vscode.ViewColumn.Active);
+      this.focus();
+      return;
+    }
+
+    const panel = vscode.window.createWebviewPanel(
+      "opencodeTui.terminalEditor",
+      "Open Sidebar Terminal",
+      vscode.ViewColumn.Beside,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [this.context.extensionUri],
+      },
+    );
+
+    this._panel = panel;
+    panel.webview.html = this.getHtmlForWebview(panel.webview);
+
+    const processAlive = this.sessionRuntime.hasLiveTerminalProcess();
+    if (this.sessionRuntime.isStartedFlag() && !processAlive) {
+      this.sessionRuntime.resetState();
+    }
+
+    panel.webview.onDidReceiveMessage((message) => {
+      this.handleMessage(message);
+    });
+
+    if (processAlive) {
+      this.sessionRuntime.reconnectListeners();
+    }
+
+    this.postTerminalConfig();
+
+    panel.onDidDispose(() => {
+      if (this._panel === panel) {
+        this._panel = undefined;
+        if (this._view) {
+          this.postTerminalConfig();
+          this.postWebviewMessage({ type: "webviewVisible" });
+        }
+      }
+    });
   }
 
   public formatFileReference(reference: AiToolFileReference): string {
@@ -263,12 +332,43 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
     await this.sessionRuntime.killTmuxSession(sessionId);
   }
 
-  public async splitTmuxPane(direction: "h" | "v"): Promise<void> {
-    await this.sessionRuntime.splitTmuxPane(direction);
+  public async executeRawTmuxCommand(
+    subcommand: string,
+    args: string[] = [],
+  ): Promise<string> {
+    if (!this.tmuxSessionManager) {
+      throw new Error("tmux session manager unavailable");
+    }
+
+    if (!this.isTmuxRawSubcommand(subcommand)) {
+      throw new Error(`Unsupported tmux subcommand: ${subcommand}`);
+    }
+
+    const sessionId = this.instanceStore?.getActive()?.runtime.tmuxSessionId;
+    if (!sessionId) {
+      throw new Error("No active tmux session available");
+    }
+
+    const resolvedArgs = await this.resolveRawTmuxCommandArgs(subcommand, args);
+    return await this.tmuxSessionManager.executeRawCommand(
+      sessionId,
+      subcommand,
+      resolvedArgs,
+    );
+  }
+
+  public async splitTmuxPane(
+    direction: "h" | "v",
+  ): Promise<string | undefined> {
+    return await this.sessionRuntime.splitTmuxPane(direction);
   }
 
   public getSelectedTmuxSessionId(): string | undefined {
     return this.sessionRuntime.getSelectedTmuxSessionId();
+  }
+
+  public async zoomTmuxPane(): Promise<void> {
+    await this.sessionRuntime.zoomTmuxPane();
   }
 
   public async killTmuxPane(): Promise<void> {
@@ -295,6 +395,7 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
     sessionId: string,
     toolName: string,
     savePreference: boolean,
+    targetPaneId?: string,
   ): Promise<void> {
     if (savePreference) {
       const config = vscode.workspace.getConfiguration("opencodeTui");
@@ -318,14 +419,29 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
       this.sessionRuntime.resolveInstanceIdFromSessionId(sessionId);
     this.sessionRuntime.rememberSelectedTool(tool.name, instanceId);
 
+    const effectiveSessionId =
+      this.sessionRuntime.resolveTmuxSessionIdForInstance(instanceId) ??
+      sessionId;
+
     try {
-      const panes = await this.tmuxSessionManager.listPanes(sessionId);
-      const targetPane = panes.find((p) => p.isActive) ?? panes[0];
-      if (targetPane) {
+      let paneIdToUse: string | undefined = targetPaneId;
+      if (!paneIdToUse) {
+        const panes = await this.tmuxSessionManager.listPanes(
+          effectiveSessionId,
+          { activeWindowOnly: true },
+        );
+        const targetPane = panes.find((p) => p.isActive) ?? panes[0];
+        paneIdToUse = targetPane?.paneId;
+      }
+      if (paneIdToUse) {
         const operator = this.aiToolRegistry.getForConfig(tool);
         await this.tmuxSessionManager.sendTextToPane(
-          targetPane.paneId,
+          paneIdToUse,
           operator.getLaunchCommand(tool),
+        );
+      } else {
+        this.logger.warn(
+          `[TerminalProvider] launchAiTool skipped: no target pane for session ${effectiveSessionId}`,
         );
       }
     } catch (error) {
@@ -339,26 +455,93 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
     this.messageRouter.handleMessage(message);
   }
 
-  public showAiToolSelector(sessionId: string, sessionName: string): void {
+  private isTmuxRawSubcommand(value: string): value is TmuxRawSubcommand {
+    return TMUX_RAW_ALLOWED_SUBCOMMANDS.some((command) => command === value);
+  }
+
+  private async resolveRawTmuxCommandArgs(
+    subcommand: TmuxRawSubcommand,
+    args: string[],
+  ): Promise<string[]> {
+    switch (subcommand) {
+      case "rename-session":
+        return await this.promptForTmuxValue(
+          "Rename tmux session",
+          "Enter the new tmux session name",
+          args[0],
+        );
+      case "rename-window":
+        return await this.promptForTmuxValue(
+          "Rename tmux window",
+          "Enter the new tmux window name",
+          args[0],
+        );
+      case "select-layout":
+        return await this.promptForTmuxValue(
+          "Select tmux layout",
+          "Enter a tmux layout name (e.g. even-horizontal, tiled, main-vertical)",
+          args[0],
+        );
+      default:
+        return args;
+    }
+  }
+
+  private async promptForTmuxValue(
+    title: string,
+    prompt: string,
+    value?: string,
+  ): Promise<string[]> {
+    const input = await vscode.window.showInputBox({
+      title,
+      prompt,
+      value,
+      ignoreFocusOut: true,
+      validateInput: (currentValue) =>
+        currentValue.trim().length === 0 ? "A value is required" : undefined,
+    });
+
+    if (input === undefined) {
+      throw new Error("tmux command cancelled");
+    }
+
+    return [input.trim()];
+  }
+
+  public showAiToolSelector(
+    sessionId: string,
+    sessionName: string,
+    forceShow = false,
+    targetPaneId?: string,
+  ): void {
     const config = vscode.workspace.getConfiguration("opencodeTui");
     const instanceId =
       this.sessionRuntime.resolveInstanceIdFromSessionId(sessionId);
+    const effectiveSessionId =
+      this.sessionRuntime.resolveTmuxSessionIdForInstance(instanceId) ??
+      sessionId;
     const savedTool =
       this.instanceStore?.get(instanceId)?.config.selectedAiTool ??
       config.get<string>("defaultAiTool", "");
     const tools: AiToolConfig[] = resolveAiToolConfigs(
       config.get("aiTools", []),
     );
-    if (savedTool) {
-      void this.launchAiTool(sessionId, savedTool, false);
+    if (!forceShow && savedTool) {
+      void this.launchAiTool(
+        effectiveSessionId,
+        savedTool,
+        false,
+        targetPaneId,
+      );
       return;
     }
     this.postWebviewMessage({
       type: "showAiToolSelector",
-      sessionId,
+      sessionId: effectiveSessionId,
       sessionName,
       defaultTool: undefined,
       tools,
+      targetPaneId,
     });
   }
 
@@ -383,7 +566,8 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
   }
 
   private postWebviewMessage(message: unknown): void {
-    this._view?.webview.postMessage(message);
+    const webview = this._panel?.webview ?? this._view?.webview;
+    webview?.postMessage(message);
   }
 
   private postTerminalConfig(): void {
@@ -451,6 +635,35 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
       text += possible.charAt(Math.floor(Math.random() * possible.length));
     }
     return text;
+  }
+
+  public toggleDashboard(): void {
+    void vscode.commands.executeCommand("opencodeTui.openTerminalManager");
+  }
+
+  public toggleTmuxCommandToolbar(): void {
+    const selectedSessionId = this.sessionRuntime.getSelectedTmuxSessionId();
+    const resolvedSessionId =
+      this.sessionRuntime.resolveTmuxSessionIdForInstance(
+        this.getActiveInstanceId(),
+      );
+    const tmuxSessionId = selectedSessionId ?? resolvedSessionId;
+
+    this.logger.info(
+      `[DIAG:toggleTmuxCommandToolbar] selected=${selectedSessionId ?? "none"} resolved=${resolvedSessionId ?? "none"} effective=${tmuxSessionId ?? "none"} view=${!!this._view} panel=${!!this._panel}`,
+    );
+
+    if (!tmuxSessionId) {
+      this.logger.warn(
+        `[DIAG:toggleTmuxCommandToolbar] BLOCKED — no tmux session id`,
+      );
+      return;
+    }
+
+    this.postWebviewMessage({ type: "toggleTmuxCommandToolbar" });
+    this.logger.info(
+      `[DIAG:toggleTmuxCommandToolbar] message posted to webview`,
+    );
   }
 
   public dispose(): void {

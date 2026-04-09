@@ -8,6 +8,8 @@ export interface AiToolConfig {
   label: string;
   path: string;
   args: string[];
+  aliases?: string[];
+  operator?: string;
 }
 
 export interface AiToolSelectorCallbacks {
@@ -17,6 +19,7 @@ export interface AiToolSelectorCallbacks {
 let visible = false;
 let focusedIndex = 0;
 let sessionId: string | null = null;
+let targetPaneId: string | null = null;
 let tools: AiToolConfig[] = [];
 
 function escapeHtml(value: string | number | undefined): string {
@@ -33,11 +36,13 @@ export function show(
   sessionName: string,
   defaultTool: string | undefined,
   toolList: AiToolConfig[] | undefined,
+  paneId?: string,
 ): void {
   if (toolList && toolList.length > 0) {
     tools = toolList;
   }
   sessionId = id;
+  targetPaneId = paneId ?? null;
   visible = true;
   focusedIndex = defaultTool
     ? tools.findIndex((t) => t.name === defaultTool)
@@ -75,6 +80,7 @@ export function show(
 export function hide(): void {
   visible = false;
   sessionId = null;
+  targetPaneId = null;
   const backdrop = document.getElementById("ai-selector");
   if (backdrop) {
     backdrop.style.display = "none";
@@ -108,6 +114,7 @@ export function select(callbacks: AiToolSelectorCallbacks): void {
     sessionId,
     tool: tool.name,
     savePreference: savePref,
+    targetPaneId,
   });
   hide();
 }

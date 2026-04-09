@@ -46,7 +46,7 @@ describe("TerminalManager", () => {
     });
 
     it("should create terminal with command", () => {
-      manager.createTerminal("test-id", "opencode -c");
+      manager.createTerminal("test-id", "opencode");
 
       expect(manager.getTerminal("test-id")).toBeDefined();
     });
@@ -120,7 +120,7 @@ describe("TerminalManager", () => {
     });
 
     it("should work without custom env (backward compatibility)", () => {
-      const terminal = manager.createTerminal("test-id", "opencode -c");
+      const terminal = manager.createTerminal("test-id", "opencode");
 
       expect(terminal).toBeDefined();
       expect(terminal.id).toBe("test-id");

@@ -1,18 +1,13 @@
 import * as vscode from "vscode";
+import { ILogger } from "./ILogger";
 import { PortManager } from "./PortManager";
-import {
-  InstanceId,
-  InstanceRecord,
-  InstanceState,
-  InstanceStore,
-} from "./InstanceStore";
+import { InstanceId, InstanceRecord, InstanceStore } from "./InstanceStore";
 import { ConnectionResolver } from "./ConnectionResolver";
 import { TerminalManager } from "../terminals/TerminalManager";
 
-const DEFAULT_COMMAND = "opencode -c";
+const DEFAULT_COMMAND = "opencode";
 
 interface SpawnOptions {
-  command?: string;
   args?: string[];
   preferredPort?: number;
 }
@@ -22,7 +17,7 @@ export class InstanceController implements vscode.Disposable {
     private readonly terminalManager: TerminalManager,
     private readonly instanceStore: InstanceStore,
     private readonly portManager: PortManager,
-    private readonly outputChannel?: vscode.OutputChannel,
+    private readonly logger?: ILogger,
     private readonly connectionResolver?: ConnectionResolver,
   ) {}
 
@@ -39,7 +34,6 @@ export class InstanceController implements vscode.Disposable {
     const terminalKey = this.getTerminalKey(instanceId, current);
     const nextConfig = {
       ...current.config,
-      command: options?.command ?? current.config.command,
       args: options?.args ?? current.config.args,
       preferredPort: options?.preferredPort ?? current.config.preferredPort,
     };
@@ -60,10 +54,7 @@ export class InstanceController implements vscode.Disposable {
         terminalKey,
         nextConfig.preferredPort,
       );
-      const command = this.buildSpawnCommand(
-        nextConfig.command,
-        nextConfig.args,
-      );
+      const command = this.buildSpawnCommand(nextConfig.args);
 
       this.terminalManager.createTerminal(
         terminalKey,
@@ -242,7 +233,7 @@ export class InstanceController implements vscode.Disposable {
       } catch (error) {
         const latest = this.instanceStore.get(instanceId) ?? current;
         const message = error instanceof Error ? error.message : String(error);
-        this.outputChannel?.appendLine(
+        this.logger?.error(
           `[InstanceController] Failed to resolve '${instanceId}': ${message}`,
         );
         this.upsertRecord({
@@ -312,8 +303,8 @@ export class InstanceController implements vscode.Disposable {
     return record.runtime.terminalKey ?? `opencode-instance-${instanceId}`;
   }
 
-  private buildSpawnCommand(command?: string, args?: string[]): string {
-    const baseCommand = command?.trim() || DEFAULT_COMMAND;
+  private buildSpawnCommand(args?: string[]): string {
+    const baseCommand = DEFAULT_COMMAND;
     if (!args || args.length === 0) {
       return baseCommand;
     }
@@ -339,7 +330,7 @@ export class InstanceController implements vscode.Disposable {
     overrides?: Partial<InstanceRecord>,
   ): void {
     const message = error instanceof Error ? error.message : String(error);
-    this.outputChannel?.appendLine(
+    this.logger?.error(
       `[InstanceController] Failed to ${operation} '${current.config.id}': ${message}`,
     );
 

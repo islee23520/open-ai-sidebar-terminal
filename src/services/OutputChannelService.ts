@@ -1,11 +1,12 @@
 import * as vscode from "vscode";
+import type { ILogger } from "./ILogger";
 
 /**
  * Service for managing the VS Code: Output Channel for logging.
  * Follows the singleton pattern to ensure all parts of the extension
  * log to the same channel.
  */
-export class OutputChannelService {
+export class OutputChannelService implements ILogger {
   private static instance: OutputChannelService | undefined;
   private channel: vscode.LogOutputChannel;
 
@@ -18,10 +19,10 @@ export class OutputChannelService {
 
   /**
    * Private constructor to enforce singleton pattern.
-   * Creates a LogOutputChannel named 'OpenCode TUI'.
+   * Creates a LogOutputChannel named 'Open Sidebar Terminal'.
    */
   private constructor() {
-    this.channel = vscode.window.createOutputChannel("OpenCode Sidebar TUI", {
+    this.channel = vscode.window.createOutputChannel("Open Sidebar TUI", {
       log: true,
     });
   }

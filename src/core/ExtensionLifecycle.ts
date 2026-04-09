@@ -5,6 +5,7 @@ import { TerminalManager } from "../terminals/TerminalManager";
 import { OutputCaptureManager } from "../services/OutputCaptureManager";
 import { ContextSharingService } from "../services/ContextSharingService";
 import { ContextManager } from "../services/ContextManager";
+import type { ILogger } from "../services/ILogger";
 import { OutputChannelService } from "../services/OutputChannelService";
 import { InstanceDiscoveryService } from "../services/InstanceDiscoveryService";
 import { OpenCodeApiClient } from "../services/OpenCodeApiClient";
@@ -40,6 +41,8 @@ export class ExtensionLifecycle {
   private portManager: PortManager | undefined;
   private tmuxSessionManager: TmuxSessionManager | undefined;
   private terminalDashboardProvider: TerminalDashboardProvider | undefined;
+  private activated = false;
+  private tuiProviderRegistration: vscode.Disposable | undefined;
 
   private static readonly TERMINAL_ID = "opencode-main";
 
@@ -81,7 +84,14 @@ export class ExtensionLifecycle {
 
   async activate(context: vscode.ExtensionContext): Promise<void> {
     const logger = OutputChannelService.getInstance();
-    logger.info("Initializing OpenCode Sidebar TUI...");
+    if (this.activated) {
+      logger.warn(
+        "[ExtensionLifecycle] activate() called while already active - skipping to prevent double provider registration",
+      );
+      return;
+    }
+    this.activated = true;
+    logger.info("Initializing Open Sidebar TUI...");
 
     try {
       // Initialize terminal manager
@@ -97,12 +107,21 @@ export class ExtensionLifecycle {
       // Initialize multi-instance support
       this.instanceStore = new InstanceStore();
       this.portManager = new PortManager(this.instanceStore);
-      const tmuxSessionManager = new TmuxSessionManager();
-      if (await tmuxSessionManager.isAvailable()) {
-        this.tmuxSessionManager = tmuxSessionManager;
+      const enableTmux = vscode.workspace
+        .getConfiguration("opencodeTui")
+        .get<boolean>("enableTmux", true);
+      if (enableTmux) {
+        const tmuxSessionManager = new TmuxSessionManager(logger);
+        if (await tmuxSessionManager.isAvailable()) {
+          this.tmuxSessionManager = tmuxSessionManager;
+        } else {
+          logger.info(
+            "[ExtensionLifecycle] tmux not detected; using native terminal shell behavior",
+          );
+        }
       } else {
         logger.info(
-          "[ExtensionLifecycle] tmux not detected; using native terminal shell behavior",
+          "[ExtensionLifecycle] tmux disabled by opencodeTui.enableTmux setting; using native terminal shell behavior",
         );
       }
       this.instanceRegistry = new InstanceRegistry(context);
@@ -120,12 +139,14 @@ export class ExtensionLifecycle {
       const connectionResolver = new ConnectionResolver(
         this.instanceStore,
         this.instanceDiscoveryService,
+        undefined,
+        logger,
       );
       this.instanceController = new InstanceController(
         this.terminalManager,
         this.instanceStore,
         this.portManager,
-        logger.getChannel(),
+        logger,
         connectionResolver,
       );
 
@@ -146,36 +167,50 @@ export class ExtensionLifecycle {
         this.tmuxSessionManager,
       );
 
-      // Register webview provider
-      const provider = vscode.window.registerWebviewViewProvider(
-        TerminalProvider.viewType,
-        this.tuiProvider,
-        {
-          webviewOptions: {
-            retainContextWhenHidden: true,
-          },
-        },
-      );
-      context.subscriptions.push(provider);
-
-      if (this.tmuxSessionManager) {
-        this.terminalDashboardProvider = new TerminalDashboardProvider(
-          context,
-          this.tmuxSessionManager,
-          logger.getChannel(),
-          this.instanceStore,
+      // Register webview provider — guard against double-registration on fast
+      // reload (build-and-install) where the previous context.subscriptions may
+      // not yet be disposed when the new activation begins.
+      this.tuiProviderRegistration?.dispose();
+      this.tuiProviderRegistration = undefined;
+      try {
+        const providerRegistration = vscode.window.registerWebviewViewProvider(
+          TerminalProvider.viewType,
           this.tuiProvider,
-        );
-        const tmuxDashboardProvider = vscode.window.registerWebviewViewProvider(
-          TerminalDashboardProvider.viewType,
-          this.terminalDashboardProvider,
           {
             webviewOptions: {
               retainContextWhenHidden: true,
             },
           },
         );
-        context.subscriptions.push(tmuxDashboardProvider);
+        this.tuiProviderRegistration = providerRegistration;
+        context.subscriptions.push(providerRegistration);
+      } catch (err) {
+        if (err instanceof Error && err.message.includes("already registered")) {
+          logger.warn(
+            `[ExtensionLifecycle] ${TerminalProvider.viewType} provider already registered — prior activation still active. Terminal will attach on next view reveal.`,
+          );
+        } else {
+          throw err;
+        }
+      }
+
+      if (this.tmuxSessionManager) {
+        this.terminalDashboardProvider = new TerminalDashboardProvider(
+          context,
+          this.tmuxSessionManager,
+          logger,
+          this.instanceStore,
+          this.tuiProvider,
+        );
+
+        context.subscriptions.push(
+          vscode.commands.registerCommand(
+            "opencodeTui.openTerminalManager",
+            () => {
+              this.terminalDashboardProvider?.show();
+            },
+          ),
+        );
       }
 
       // Register commands
@@ -198,13 +233,13 @@ export class ExtensionLifecycle {
       const explainAndFixCommand = this.codeActionProvider.registerCommand();
       context.subscriptions.push(codeActionRegistration, explainAndFixCommand);
 
-      logger.info("OpenCode Sidebar TUI activated successfully");
+      logger.info("Open Sidebar TUI activated successfully");
     } catch (error) {
       logger.error(
-        `Failed to activate OpenCode Sidebar TUI: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to activate Open Sidebar TUI: ${error instanceof Error ? error.message : String(error)}`,
       );
       vscode.window.showErrorMessage(
-        `Failed to activate OpenCode Sidebar TUI: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to activate Open Sidebar TUI: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -244,6 +279,10 @@ export class ExtensionLifecycle {
       sendPrompt: (prompt: string) =>
         this.tuiProvider?.sendPrompt(prompt) ?? Promise.resolve(),
       resolveActiveTmuxSessionId: () => this.resolveActiveTmuxSessionId(),
+      resolveActiveTmuxFocus: () =>
+        this.tmuxSessionManager?.getActiveFocus() ?? Promise.resolve(undefined),
+      resolveWorkspacePath: () =>
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? undefined,
     };
   }
 
@@ -402,9 +441,15 @@ export class ExtensionLifecycle {
   }
 
   async deactivate(): Promise<void> {
-    this.outputChannelService?.info("Deactivating OpenCode Sidebar TUI...");
+    this.outputChannelService?.info("Deactivating Open Sidebar TUI...");
+    this.activated = false;
 
     await this.promptKillTmuxSessions();
+
+    if (this.tuiProviderRegistration) {
+      this.tuiProviderRegistration.dispose();
+      this.tuiProviderRegistration = undefined;
+    }
 
     if (this.tuiProvider) {
       this.tuiProvider.dispose();
@@ -453,6 +498,6 @@ export class ExtensionLifecycle {
     this.captureManager = undefined;
     this.contextSharingService = undefined;
 
-    logger?.info("OpenCode Sidebar TUI deactivated");
+    logger?.info("Open Sidebar TUI deactivated");
   }
 }

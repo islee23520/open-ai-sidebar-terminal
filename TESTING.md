@@ -41,10 +41,10 @@ Option B: Via VS Code UI
 
 2. **Verify auto-start**
    - OpenCode should start automatically
-   - You should see the OpenCode TUI interface
+   - You should see the Open Sidebar Terminal interface
 
 3. **Test commands**
-   - Try: `OpenCode TUI: Clear Terminal`
+   - Try: `Open Sidebar Terminal: Clear Terminal`
 
 4. **Test terminal interaction**
    - Type commands in the terminal
@@ -70,7 +70,7 @@ For rapid testing during development:
 
 ### Expected Behavior
 
-✅ OpenCode sidebar appears in activity bar
+✅ Open Sidebar appears in activity bar
 ✅ Terminal automatically starts with OpenCode
 ✅ Full TUI interaction works (keyboard, mouse)
 ✅ Terminal renders correctly (colors, formatting)

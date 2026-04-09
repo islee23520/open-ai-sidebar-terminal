@@ -33,6 +33,23 @@ html {
   display: none;
 }
 
+.toolbar-controls {
+  display: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.toolbar-controls:not(.hidden) {
+  display: flex;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
 .tmux-btn {
   background: none;
   border: none;
@@ -54,6 +71,12 @@ html {
   background: var(--vscode-toolbar-activeBackground, rgba(255, 255, 255, 0.12));
 }
 
+.tmux-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .tmux-session-label {
   flex: 1;
   text-align: center;
@@ -65,30 +88,7 @@ html {
   min-width: 0;
 }
 
-.font-preload {
-  position: absolute;
-  left: -9999px;
-  visibility: hidden;
-}
-
 .pane-controls {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  background: var(--vscode-editorWidget-background, rgba(30, 30, 30, 0.85));
-  border: 1px solid var(--vscode-panel-border, #474747);
-  border-radius: 4px;
-  padding: 2px;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  pointer-events: none;
-}
-
-.pane-controls.hidden {
   display: none;
 }
 
@@ -259,4 +259,330 @@ html {
   color: var(--vscode-descriptionForeground, #999);
   margin-top: 6px;
   text-align: center;
+}
+
+/* Dashboard Overlay */
+.dashboard-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--vscode-editor-background, #1e1e1e);
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dashboard-container.hidden {
+  display: none;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--vscode-editorGroupHeader-tabsBackground, #252526);
+  border-bottom: 1px solid var(--vscode-panel-border, #474747);
+  gap: 12px;
+}
+
+.dashboard-header-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.dashboard-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.dashboard-workspace {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #999);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dashboard-btn {
+  border: 1px solid var(--vscode-button-border, transparent);
+  background: var(--vscode-button-secondaryBackground, #3c3c3c);
+  color: var(--vscode-button-secondaryForeground, #cccccc);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--vscode-font-family);
+}
+
+.dashboard-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #4c4c4c);
+}
+
+.dashboard-btn.primary {
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #ffffff);
+}
+
+.dashboard-btn.primary:hover {
+  background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.dashboard-btn.close-btn {
+  background: transparent;
+  border-color: var(--vscode-panel-border, #474747);
+  padding: 4px 8px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.dashboard-btn.close-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.1));
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.dashboard-session-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Session Card Styles (embedded in terminal webview) */
+.dashboard-session-card {
+  border: 1px solid var(--vscode-panel-border, #474747);
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--vscode-editor-background, #1e1e1e);
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.dashboard-session-card:hover {
+  border-color: var(--vscode-focusBorder, #007fd4);
+}
+
+.dashboard-session-card.active {
+  border-color: var(--vscode-focusBorder, #007fd4);
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, #007fd4);
+}
+
+.dashboard-session-card .row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-session-card strong {
+  font-size: 13px;
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.dashboard-session-card .status {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground, #999);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
+.dashboard-session-card .meta-grid {
+  display: grid;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+.dashboard-session-card .meta {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #999);
+}
+
+.dashboard-session-card .session-preview {
+  margin-top: 6px;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  background: var(--vscode-terminal-background, #1e1e1e);
+  border: 1px solid var(--vscode-panel-border, #474747);
+  border-radius: 3px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 4px;
+  line-height: 1.3;
+  letter-spacing: 0.2px;
+  padding: 2px 3px;
+  overflow: hidden;
+  opacity: 0.6;
+  white-space: pre;
+  color: var(--vscode-terminal-foreground, #cccccc);
+}
+
+.dashboard-session-card .session-preview.empty {
+  color: var(--vscode-descriptionForeground, #999);
+  font-style: italic;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  aspect-ratio: unset;
+  padding: 8px;
+}
+
+.dashboard-session-card .preview-line {
+  overflow: hidden;
+  white-space: pre;
+  height: 1.4em;
+}
+
+.dashboard-session-card .kill-btn {
+  background: transparent;
+  border: 1px solid var(--vscode-input-border, #474747);
+  color: var(--vscode-descriptionForeground, #999);
+  border-radius: 3px;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.dashboard-session-card .kill-btn:hover {
+  color: var(--vscode-errorForeground, #f48771);
+  border-color: var(--vscode-errorForeground, #f48771);
+}
+
+.dashboard-empty {
+  color: var(--vscode-descriptionForeground, #999);
+  font-size: 12px;
+  padding: 20px;
+  text-align: center;
+  border: 1px dashed var(--vscode-panel-border, #474747);
+  border-radius: 6px;
+}
+.tmux-command-menu {
+  position: relative;
+  overflow: visible;
+}
+
+.tmux-cmd-dropdown {
+  position: fixed;
+  top: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1001;
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-panel-border, #474747);
+  border-radius: 6px;
+  padding: 4px;
+  width: 280px;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.tmux-cmd-dropdown.hidden {
+  display: none;
+}
+
+.tmux-cmd-search {
+  padding: 4px;
+  border-bottom: 1px solid var(--vscode-panel-border, #474747);
+  margin-bottom: 4px;
+}
+
+.tmux-cmd-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--vscode-inputBackground, #3c3c3c);
+  border: 1px solid var(--vscode-inputBorder, #474747);
+  border-radius: 3px;
+  color: var(--vscode-inputForeground, #cccccc);
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: var(--vscode-font-family);
+  outline: none;
+}
+
+.tmux-cmd-search-input:focus {
+  border-color: var(--vscode-focusBorder, #007fd4);
+}
+
+.tmux-cmd-search-input::placeholder {
+  color: var(--vscode-inputPlaceholderForeground, #999999);
+}
+
+.tmux-cmd-list {
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.tmux-cmd-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  user-select: none;
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.tmux-cmd-item:hover {
+  background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.04));
+}
+
+.tmux-cmd-item.focused {
+  background: var(
+    --vscode-list-activeSelectionBackground,
+    rgba(0, 100, 200, 0.3)
+  );
+  color: var(--vscode-list-activeSelectionForeground, #ffffff);
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+}
+
+.tmux-cmd-item.disabled {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+
+.tmux-cmd-category {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground, #999);
+  background: var(--vscode-badge-background, rgba(255, 255, 255, 0.08));
+  padding: 0 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.tmux-cmd-label {
+  flex: 1;
+}
+
+.tmux-cmd-hint {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground, #999);
+  padding: 4px 8px;
+  text-align: center;
+  border-top: 1px solid var(--vscode-panel-border, #474747);
+  margin-top: 4px;
 }

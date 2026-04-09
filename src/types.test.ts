@@ -5,7 +5,7 @@ import type {
   TmuxDashboardHostMessage,
   WebviewMessage,
 } from "./types";
-import { DEFAULT_AI_TOOLS } from "./types";
+import { DEFAULT_AI_TOOLS, TMUX_RAW_ALLOWED_SUBCOMMANDS } from "./types";
 
 describe("Types", () => {
   describe("WebviewMessage", () => {
@@ -114,6 +114,37 @@ describe("Types", () => {
       expect(createMessage.type).toBe("createTmuxSession");
       expect(nativeMessage.type).toBe("switchNativeShell");
     });
+
+    it("should accept executeTmuxCommand messages for supported toolbar commands", () => {
+      const message: WebviewMessage = {
+        type: "executeTmuxCommand",
+        commandId: "opencodeTui.tmuxCreateWindow",
+      };
+
+      expect(message.type).toBe("executeTmuxCommand");
+      expect(message.commandId).toBe("opencodeTui.tmuxCreateWindow");
+    });
+
+    it("should accept executeTmuxRawCommand messages for supported native tmux commands", () => {
+      const message: WebviewMessage = {
+        type: "executeTmuxRawCommand",
+        subcommand: "rename-session",
+        args: ["workspace-renamed"],
+      };
+
+      expect(message.type).toBe("executeTmuxRawCommand");
+      expect(message.subcommand).toBe("rename-session");
+      expect(message.args).toEqual(["workspace-renamed"]);
+      expect(TMUX_RAW_ALLOWED_SUBCOMMANDS).toContain("choose-tree");
+    });
+
+    it("should accept tmux command toolbar host messages", () => {
+      const message: HostMessage = {
+        type: "toggleTmuxCommandToolbar",
+      };
+
+      expect(message.type).toBe("toggleTmuxCommandToolbar");
+    });
   });
 
   describe("Tmux dashboard messages", () => {
@@ -166,7 +197,7 @@ describe("Types", () => {
     it("uses default AI tools baseline", () => {
       expect(DEFAULT_AI_TOOLS[0]?.name).toBe("opencode");
       expect(DEFAULT_AI_TOOLS[0]?.args).toEqual(["-c"]);
-      expect(DEFAULT_AI_TOOLS[1]?.name).toBe("claude-code");
+      expect(DEFAULT_AI_TOOLS[1]?.name).toBe("claude");
       expect(DEFAULT_AI_TOOLS[1]?.aliases).toContain("claude");
     });
   });

@@ -1,886 +1,255 @@
 import "@xterm/xterm/css/xterm.css";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
-import { WebLinksAddon } from "@xterm/addon-web-links";
 import * as AiSelector from "./ai-tool-selector";
+import * as TmuxPrompt from "./tmux-prompt";
+import * as TmuxCmd from "./tmux-command-dropdown";
+import { HostMessage } from "../types";
+import { postMessage } from "./shared/vscode-api";
+import { initTerminal } from "./terminal";
+import { createMessageHandler, type MessageHandlerCallbacks } from "./messages";
 import {
-  WebviewMessage,
-  HostMessage,
-  ALLOWED_IMAGE_TYPES,
-  MAX_IMAGE_SIZE,
-} from "../types";
+  setupTmuxToolbar,
+  setupPaneControls,
+  setupAiToolButton,
+  setupReloadButton,
+  setupTmuxCommandButton,
+} from "./toolbar";
 
-declare function acquireVsCodeApi(): {
-  postMessage: (message: WebviewMessage) => void;
-  getState: () => any;
-  setState: (state: any) => void;
+import {
+  createDashboardRenderer,
+  setupDashboardEventListeners,
+} from "./dashboard-renderer";
+
+const dashboard = createDashboardRenderer();
+
+let currentSessionId: string | null = null;
+let tmuxAvailable = true;
+
+function toggleTmuxCommandMenu(): void {
+  if (!currentSessionId) {
+    return;
+  }
+
+  if (TmuxCmd.isVisible()) {
+    TmuxCmd.hide();
+  } else {
+    TmuxCmd.show(currentSessionId);
+  }
+}
+
+function updateTmuxOnlyElements(available: boolean): void {
+  const elements = document.querySelectorAll("[data-tmux-only]");
+  Array.from(elements).forEach((el) => {
+    if (el instanceof HTMLElement) {
+      el.style.display = available ? "" : "none";
+    }
+  });
+}
+
+const callbacks: MessageHandlerCallbacks = {
+  onActiveSession(message) {
+    const toolbar = document.getElementById("tmux-toolbar");
+    const label = document.getElementById("tmux-session-label");
+    const toolbarControls = document.querySelector(".toolbar-controls");
+    const aiToolBtn = document.getElementById("btn-ai-tool");
+    const killPaneBtn = document.getElementById("btn-kill-pane");
+    if ("sessionName" in message && message.sessionName) {
+      currentSessionId = message.sessionId;
+      if (toolbar) toolbar.classList.remove("hidden");
+      if (label) {
+        const windowSuffix =
+          message.windowIndex !== undefined
+            ? ` [${message.windowIndex}]${message.windowName ? ` ${message.windowName}` : ""}`
+            : "";
+        label.textContent = message.sessionName + windowSuffix;
+      }
+      if (toolbarControls) {
+        toolbarControls.classList.remove("hidden");
+      }
+      if (aiToolBtn) {
+        aiToolBtn.style.display = message.paneHasAiTool ? "none" : "";
+      }
+      if (killPaneBtn) {
+        killPaneBtn.toggleAttribute("disabled", !message.canKillPane);
+      }
+    } else {
+      currentSessionId = null;
+      if (label) label.textContent = "";
+      if (toolbarControls) {
+        toolbarControls.classList.add("hidden");
+      }
+      if (aiToolBtn) aiToolBtn.style.display = "none";
+    }
+  },
+
+  onToggleTmuxCommandToolbar() {
+    toggleTmuxCommandMenu();
+  },
+
+  onShowAiToolSelector(message) {
+    AiSelector.show(
+      message.sessionId,
+      message.sessionName,
+      message.defaultTool,
+      message.tools,
+      message.targetPaneId,
+    );
+  },
+
+  onToggleDashboard(message) {
+    dashboard.setVisible(message.visible);
+  },
+
+  onUpdateDashboard(message) {
+    dashboard.updateSessions(message.sessions as any);
+    dashboard.updateWorkspace(message.workspace ?? "");
+    dashboard.updateShowingAll(message.showingAll ?? false);
+  },
+
+  onShowTmuxPrompt(message) {
+    if (message.tmuxAvailable === false) {
+      // tmux not installed — auto-select shell
+      postMessage({ type: "sendTmuxPromptChoice", choice: "shell" });
+    } else {
+      TmuxPrompt.show(message.workspaceName);
+    }
+  },
+
+  onPlatformInfo(message) {
+    tmuxAvailable = message.tmuxAvailable !== false;
+    updateTmuxOnlyElements(tmuxAvailable);
+  },
 };
 
-const vscode = acquireVsCodeApi();
+const messageHandler = createMessageHandler(callbacks);
 
-let terminal: Terminal | null = null;
-let fitAddon: FitAddon | null = null;
-let currentPlatform: string = "";
-let justHandledCtrlC = false;
-let lastPasteTime = 0;
-let needsRefresh = false;
-let animationFrameId: number | null = null;
-
-const MOUSE_ENABLE = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
-const MOUSE_DISABLE = "\x1b[?1000l\x1b[?1002l\x1b[?1006l";
-
-function setMouseTracking(enabled: boolean): void {
-  if (!terminal) return;
-  terminal.write(enabled ? MOUSE_ENABLE : MOUSE_DISABLE);
-}
-
-function scheduleRefresh() {
-  needsRefresh = true;
-  if (animationFrameId !== null) return;
-
-  animationFrameId = requestAnimationFrame(() => {
-    animationFrameId = null;
-    if (terminal && needsRefresh) {
-      terminal.refresh(0, terminal.rows - 1);
-      needsRefresh = false;
-    }
-  });
-}
-
-function copySelectionToClipboard(selection: string): void {
-  vscode.postMessage({
-    type: "setClipboard",
-    text: selection,
-  });
-}
-
-async function handlePasteWithImageSupport(): Promise<void> {
-  try {
-    const items = await navigator.clipboard.read();
-    for (const item of items) {
-      const imageType = item.types.find((t) => ALLOWED_IMAGE_TYPES.includes(t));
-      if (imageType) {
-        const blob = await item.getType(imageType);
-        if (blob.size > MAX_IMAGE_SIZE) {
-          console.warn("Image too large, falling back to text paste");
-          break;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (typeof reader.result === "string") {
-            vscode.postMessage({
-              type: "imagePasted",
-              data: reader.result,
-            });
-          }
-        };
-        reader.onerror = () => {
-          console.error("FileReader failed to read image");
-          vscode.postMessage({ type: "triggerPaste" });
-        };
-        reader.onabort = () => {
-          vscode.postMessage({ type: "triggerPaste" });
-        };
-        reader.readAsDataURL(blob);
-        return;
-      }
-    }
-  } catch (err) {
-    console.warn(
-      "Could not read image from clipboard, falling back to text paste:",
-      err,
-    );
-  }
-  vscode.postMessage({ type: "triggerPaste" });
-}
-
-function readTerminalConfig(element: HTMLElement) {
-  return {
-    fontSize: parseInt(element.dataset.fontSize || "14", 10),
-    fontFamily:
-      element.dataset.fontFamily ||
-      "'JetBrainsMono Nerd Font', 'FiraCode Nerd Font', 'CascadiaCode NF', Menlo, monospace",
-    cursorBlink: element.dataset.cursorBlink !== "false",
-    cursorStyle: (element.dataset.cursorStyle || "block") as
-      | "block"
-      | "underline"
-      | "bar",
-    scrollback: parseInt(element.dataset.scrollback || "10000", 10),
-  };
-}
-
-function initTerminal(): void {
+function initApp(): void {
   const container = document.getElementById("terminal-container");
   if (!container) return;
 
-  const config = readTerminalConfig(container);
-
-  container.addEventListener("contextmenu", (event) => {
-    event.preventDefault();
-    const selection = terminal?.getSelection();
-    if (selection && selection.length > 0) {
-      copySelectionToClipboard(selection);
-    } else {
-      vscode.postMessage({ type: "triggerPaste" });
-    }
-  });
-
-  terminal = new Terminal({
-    cursorBlink: config.cursorBlink,
-    cursorStyle: config.cursorStyle,
-    fontSize: config.fontSize,
-    fontFamily: config.fontFamily,
-    theme: {
-      background: "#1e1e1e",
-      foreground: "#cccccc",
+  const instance = initTerminal(container, {
+    onData: (data) => {
+      postMessage({ type: "terminalInput", data });
     },
-    scrollback: config.scrollback,
-  });
-
-  terminal.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
-    // Intercept keyboard for AI tool selector
-    if (AiSelector.isVisible()) {
-      event.preventDefault();
-      event.stopPropagation();
-      return false;
-    }
-
-    const isCtrlC =
-      event.ctrlKey &&
-      !event.shiftKey &&
-      !event.altKey &&
-      (event.key === "c" || event.key === "C");
-
-    if (isCtrlC) {
-      const selection = terminal?.getSelection();
-      if (selection && selection.length > 0) {
-        copySelectionToClipboard(selection);
-        justHandledCtrlC = true;
-        setTimeout(() => {
-          justHandledCtrlC = false;
-        }, 100);
-        event.preventDefault();
-        event.stopPropagation();
-        return false;
-      }
-      return true;
-    }
-
-    if (event.ctrlKey && (event.key === "v" || event.key === "V")) {
-      const now = Date.now();
-      if (now - lastPasteTime < 500) {
-        return false;
-      }
-      lastPasteTime = now;
-      event.preventDefault();
-      event.stopPropagation();
-      handlePasteWithImageSupport();
-      return false;
-    }
-
-    return true;
-  });
-
-  fitAddon = new FitAddon();
-  terminal.loadAddon(fitAddon);
-  terminal.loadAddon(
-    new WebLinksAddon((_, url) => {
-      vscode.postMessage({
-        type: "openUrl",
-        url: url,
-      });
-    }),
-  );
-
-  // Register file path link provider
-  terminal.registerLinkProvider({
-    provideLinks(bufferLineNumber, callback) {
-      if (!terminal) {
-        callback(undefined);
-        return;
-      }
-
-      const line = terminal.buffer.active.getLine(bufferLineNumber);
-      if (!line) {
-        callback(undefined);
-        return;
-      }
-
-      const lineText = line.translateToString(true);
-
-      // Security: Limit line length to prevent ReDoS attacks
-      const MAX_LINE_LENGTH = 10000;
-      if (lineText.length > MAX_LINE_LENGTH) {
-        callback(undefined);
-        return;
-      }
-
-      const links: any[] = [];
-
-      // Match OpenCode @file format: @path/to/file or @path/to/file#L10 or @path/to/file#L10-L20
-      // Also match standard file paths: file://, /absolute, ./relative, ../relative, path:line:col
-      const pathRegex =
-        /(?:^[\s"'])(@?((?:file:\/\/|\/|[A-Za-z]:\\|\.?\.?\/)[^\s"'#]+|[^\s"':\/]+(?:\/[^\s"':\/]+)+)(?:#L(\d+)(?:-L?(\d+))?)?)(?=[\s"']|$)/gi;
-
-      let match: RegExpExecArray | null = pathRegex.exec(lineText);
-      let lastIndex = -1;
-      while (match) {
-        // Prevent infinite loop on zero-width matches
-        if (match.index === lastIndex) {
-          pathRegex.lastIndex++;
-          match = pathRegex.exec(lineText);
-          continue;
-        }
-        lastIndex = match.index;
-
-        const fullMatch = match[1];
-        const hasAtPrefix = fullMatch.startsWith("@");
-        let path = match[2];
-        const lineNumStr = match[3];
-        const endLineStr = match[4];
-
-        if (!path) continue;
-
-        let lineNumber: number | undefined;
-        let columnNumber: number | undefined;
-        let endLineNumber: number | undefined;
-
-        // Handle file:// URLs
-        if (path.startsWith("file://")) {
-          try {
-            const url = new URL(path);
-            path = decodeURIComponent(url.pathname);
-            if (url.hostname && !url.pathname.startsWith("/")) {
-              path = `${url.hostname}:${path}`;
-            }
-          } catch {
-            continue;
-          }
-        }
-
-        // Parse line numbers from @file#L10 or @file#L10-L20 format
-        if (lineNumStr) {
-          lineNumber = parseInt(lineNumStr, 10);
-        }
-        if (endLineStr) {
-          endLineNumber = parseInt(endLineStr, 10);
-        }
-
-        // Also try to parse :line:col format for standard paths
-        if (!hasAtPrefix && !lineNumStr) {
-          const posRegex = /^(.*?):(\d+)(?::(\d+))?$/;
-          const posMatch = path.match(posRegex);
-          if (posMatch) {
-            path = posMatch[1];
-            lineNumber = parseInt(posMatch[2], 10);
-            if (posMatch[3]) {
-              columnNumber = parseInt(posMatch[3], 10);
-            }
-          }
-        }
-
-        // Calculate the actual start index of the clickable portion
-        const index = match.index + (match[0].length - fullMatch.length);
-
-        links.push({
-          text: fullMatch,
-          range: {
-            start: { x: index + 1, y: bufferLineNumber },
-            end: { x: index + fullMatch.length, y: bufferLineNumber },
-          },
-          activate: () => {
-            vscode.postMessage({
-              type: "openFile",
-              path: path,
-              line: lineNumber,
-              endLine: endLineNumber,
-              column: columnNumber,
-            });
-          },
-        });
-
-        match = pathRegex.exec(lineText);
-      }
-
-      callback(links);
+    onResize: (cols, rows) => {
+      postMessage({ type: "terminalResize", cols, rows });
+    },
+    onToggleTmuxCommands: () => {
+      toggleTmuxCommandMenu();
     },
   });
 
-  terminal.open(container);
-  terminal.focus();
-  setMouseTracking(true);
-
-  try {
-    const webglAddon = new WebglAddon();
-    webglAddon.onContextLoss(() => {
-      webglAddon.dispose();
-    });
-    terminal.loadAddon(webglAddon);
-  } catch (error) {
-    console.warn(
-      "WebGL renderer not available, falling back to canvas:",
-      error,
-    );
+  if (instance) {
+    messageHandler.terminal = instance.terminal;
+    messageHandler.fitAddon = instance.fitAddon;
   }
 
-  const refreshTerminal = () => terminal?.refresh(0, terminal.rows - 1);
-  container.addEventListener("focusin", refreshTerminal);
-  container.addEventListener("click", refreshTerminal);
+  setupTmuxToolbar();
+  setupPaneControls();
+  setupAiToolButton();
+  setupReloadButton();
+  setupTmuxCommandButton(() => currentSessionId);
+  setupDashboardEventListeners(() => dashboard.toggle());
 
-  // Fit terminal when container becomes visible using IntersectionObserver
-  const visibilityObserver = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting && fitAddon && terminal) {
-          fitAddon.fit();
-          scheduleRefresh();
-        }
-      });
-    },
-    { threshold: 0.1 },
-  );
-  visibilityObserver.observe(container);
-
-  // Use requestAnimationFrame for initial fit (waits for browser paint)
-  requestAnimationFrame(() => {
-    if (fitAddon && terminal) {
-      fitAddon.fit();
-      vscode.postMessage({
-        type: "ready",
-        cols: terminal.cols,
-        rows: terminal.rows,
-      });
-    }
+  window.addEventListener("message", (event: MessageEvent) => {
+    messageHandler.handleEvent(event as MessageEvent<HostMessage>);
   });
 
-  // Backup setTimeout to ensure sizing even if RAF fires too early
-  setTimeout(() => {
-    if (fitAddon && terminal) {
-      fitAddon.fit();
-      scheduleRefresh();
-      vscode.postMessage({
-        type: "terminalResize",
-        cols: terminal.cols,
-        rows: terminal.rows,
-      });
-    }
-  }, 100);
-
-  // Additional fit after a longer delay to handle slow rendering
-  setTimeout(() => {
-    if (fitAddon && terminal) {
-      fitAddon.fit();
-      scheduleRefresh();
-    }
-  }, 500);
-
-  terminal.onData((data) => {
-    if (justHandledCtrlC) {
-      justHandledCtrlC = false;
-      const filteredData = data.split("\u0003").join("");
-      if (filteredData) {
-        vscode.postMessage({
-          type: "terminalInput",
-          data: filteredData,
-        });
-      }
-      return;
-    }
-
-    if (data) {
-      vscode.postMessage({
-        type: "terminalInput",
-        data,
-      });
-    }
-  });
-
-  terminal.onResize(({ cols, rows }) => {
-    vscode.postMessage({
-      type: "terminalResize",
-      cols,
-      rows,
-    });
-  });
-
-  let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
-
-  const handleResize = () => {
-    if (resizeTimeout) {
-      clearTimeout(resizeTimeout);
-    }
-    resizeTimeout = setTimeout(() => {
-      if (fitAddon && terminal) {
-        fitAddon.fit();
-        scheduleRefresh();
-      }
-    }, 50);
-  };
-
-  window.addEventListener("resize", handleResize);
-
-  const resizeObserver = new ResizeObserver(() => {
-    handleResize();
-  });
-
-  resizeObserver.observe(container);
-
-  // Setup drag and drop for file references
-  setupDragAndDrop(vscode);
-
-  // Setup tmux toolbar buttons
-  setupTmuxToolbar(vscode);
-
-  // Setup pane control overlay buttons
-  setupPaneControls(vscode);
-
-  container.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    container.style.opacity = "0.7";
-  });
-
-  container.addEventListener("dragleave", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    container.style.opacity = "1";
-  });
-
-  container.addEventListener("drop", async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    container.style.opacity = "1";
-
-    if (e.dataTransfer) {
-      const transferTypes = Array.from(e.dataTransfer.types ?? []);
-      const transferItems = Array.from(e.dataTransfer.items ?? []);
-
-      console.log("Drop event dataTransfer.types:", transferTypes);
-      console.log("Drop event dataTransfer.items:", transferItems.length);
-      console.log(
-        "Drop event dataTransfer.itemTypes:",
-        transferItems.map((item) => `${item.kind}:${item.type}`),
-      );
-
-      const files: string[] = [];
-      const seen = new Set<string>();
-
-      const canonicalizeForDedup = (p: string): string => {
-        let s = p.trim();
-        // Unify separators so C:\x and C:/x dedup
-        s = s.replace(/\\/g, "/");
-        // Normalize Windows drive letter to lowercase
-        if (/^[A-Za-z]:\//.test(s)) {
-          s = s[0].toLowerCase() + s.slice(1);
-        }
-        // Remove trailing slash (except root)
-        if (s.length > 1) {
-          s = s.replace(/\/$/, "");
-        }
-        return s;
-      };
-
-      const addFile = (filePath: string | null | undefined) => {
-        const trimmed = filePath?.trim();
-        if (!trimmed) {
-          return;
-        }
-
-        const canonical = canonicalizeForDedup(trimmed);
-        if (!canonical || seen.has(canonical)) {
-          return;
-        }
-
-        seen.add(canonical);
-        files.push(canonical);
-      };
-
-      const extractFilePathFromValue = (value: string): string | null => {
-        const candidate = value.trim();
-
-        if (!candidate || candidate.startsWith("#")) {
-          return null;
-        }
-
-        try {
-          const url = new URL(candidate);
-
-          if (url.protocol === "file:") {
-            const decodedPath = decodeURIComponent(url.pathname);
-            const hasWindowsDrivePrefix =
-              decodedPath.length >= 3 &&
-              decodedPath[0] === "/" &&
-              /[A-Za-z]/.test(decodedPath[1] ?? "") &&
-              decodedPath[2] === ":";
-
-            return hasWindowsDrivePrefix ? decodedPath.slice(1) : decodedPath;
-          }
-        } catch {
-          const hasWindowsDrivePath =
-            candidate.length >= 3 &&
-            /[A-Za-z]/.test(candidate[0] ?? "") &&
-            candidate[1] === ":" &&
-            (candidate[2] === "\\" || candidate[2] === "/");
-
-          if (candidate.startsWith("/") || hasWindowsDrivePath) {
-            return candidate;
-          }
-        }
-
-        return null;
-      };
-
-      const parseDroppedText = (payload: string): string[] => {
-        const paths: string[] = [];
-        const lines = payload
-          .split(/\r?\n/)
-          .map((line) => line.trim())
-          .filter((line) => line.length > 0);
-
-        for (const line of lines) {
-          const filePath = extractFilePathFromValue(line);
-          if (filePath) {
-            paths.push(filePath);
-          }
-        }
-
-        if (paths.length > 0) {
-          return paths;
-        }
-
-        try {
-          const parsed = JSON.parse(payload) as unknown;
-          const stack: unknown[] = [parsed];
-
-          while (stack.length > 0) {
-            const current = stack.pop();
-
-            if (typeof current === "string") {
-              const filePath = extractFilePathFromValue(current);
-              if (filePath) {
-                paths.push(filePath);
-              }
-              continue;
-            }
-
-            if (Array.isArray(current)) {
-              stack.push(...current);
-              continue;
-            }
-
-            if (current && typeof current === "object") {
-              stack.push(...Object.values(current as Record<string, unknown>));
-            }
-          }
-        } catch {}
-
-        return paths;
-      };
-
-      const readItemString = (item: DataTransferItem): Promise<string> =>
-        new Promise((resolve) => {
-          item.getAsString((value) => resolve(value ?? ""));
-        });
-
-      const uriList = e.dataTransfer.getData("text/uri-list");
-
-      if (uriList) {
-        const uriListPaths = parseDroppedText(uriList);
-        for (const uriListPath of uriListPaths) {
-          addFile(uriListPath);
-        }
-      }
-
-      const hasVsCodeInternalType = transferTypes.some((type) =>
-        type.startsWith("application/vnd.code."),
-      );
-
-      if (hasVsCodeInternalType || files.length === 0) {
-        for (const item of transferItems) {
-          if (item.kind !== "string") {
-            continue;
-          }
-
-          if (
-            item.type === "text/uri-list" ||
-            item.type === "text/plain" ||
-            item.type.startsWith("application/vnd.code.")
-          ) {
-            const payload = await readItemString(item);
-            const payloadPaths = parseDroppedText(payload);
-
-            for (const payloadPath of payloadPaths) {
-              addFile(payloadPath);
-            }
-          }
-        }
-      }
-
-      if (e.dataTransfer.files.length > 0) {
-        for (const file of Array.from(e.dataTransfer.files)) {
-          const filePath = (file as File & { path?: string }).path || file.name;
-          addFile(filePath);
-        }
-      }
-
-      if (files.length === 0) {
-        for (let i = 0; i < e.dataTransfer.items.length; i++) {
-          const item = e.dataTransfer.items[i];
-          if (item.kind === "file") {
-            const file = item.getAsFile();
-            if (file) {
-              const filePath =
-                (file as File & { path?: string }).path || file.name;
-              addFile(filePath);
-            }
-          }
-        }
-      }
-
-      if (files.length > 0) {
-        console.log(`[WEBVIEW] Sending ${files.length} files:`, files);
-
-        let dropCell: { col: number; row: number } | undefined;
-        if (e.shiftKey && terminal) {
-          const screenEl = terminal.element?.querySelector(".xterm-screen");
-          if (screenEl) {
-            const rect = screenEl.getBoundingClientRect();
-            const relX = e.clientX - rect.left;
-            const relY = e.clientY - rect.top;
-            if (
-              relX >= 0 &&
-              relY >= 0 &&
-              relX < rect.width &&
-              relY < rect.height &&
-              terminal.cols > 0 &&
-              terminal.rows > 0
-            ) {
-              dropCell = {
-                col: Math.floor((relX / rect.width) * terminal.cols),
-                row: Math.floor((relY / rect.height) * terminal.rows),
-              };
-              console.log(`[WEBVIEW] dropCell computed:`, dropCell);
-            } else {
-              console.log(
-                `[WEBVIEW] dropCell out of bounds: relX=${relX} relY=${relY} rect=${JSON.stringify(rect)}`,
-              );
-            }
-          } else {
-            console.log(`[WEBVIEW] .xterm-screen element not found`);
-          }
-        }
-
-        vscode.postMessage({
-          type: "filesDropped",
-          files: files,
-          shiftKey: e.shiftKey,
-          dropCell,
-        });
-      } else {
-        console.log("[WEBVIEW] No files collected from drop event");
-      }
-    }
-  });
+  setupAiToolSelectorEvents();
 }
 
-function setupTmuxToolbar(vscode: any): void {
-  const prevSession = document.getElementById("btn-prev-session");
-  const nextSession = document.getElementById("btn-next-session");
-  const prevWindow = document.getElementById("btn-prev-window");
-  const nextWindow = document.getElementById("btn-next-window");
-  const newWindow = document.getElementById("btn-new-window");
-
-  prevSession?.addEventListener("click", () => {
-    vscode.postMessage({ type: "navigateTmuxSession", direction: "prev" });
-  });
-  nextSession?.addEventListener("click", () => {
-    vscode.postMessage({ type: "navigateTmuxSession", direction: "next" });
-  });
-  prevWindow?.addEventListener("click", () => {
-    vscode.postMessage({ type: "navigateTmuxWindow", direction: "prev" });
-  });
-  nextWindow?.addEventListener("click", () => {
-    vscode.postMessage({ type: "navigateTmuxWindow", direction: "next" });
-  });
-  newWindow?.addEventListener("click", () => {
-    vscode.postMessage({ type: "createTmuxWindow" });
-  });
-}
-
-function setupPaneControls(vscode: any): void {
-  const btnSplitV = document.getElementById("btn-split-v");
-  const btnSplitH = document.getElementById("btn-split-h");
-  const btnKillPane = document.getElementById("btn-kill-pane");
-
-  btnSplitV?.addEventListener("click", () => {
-    vscode.postMessage({ type: "splitTmuxPane", direction: "v" });
-  });
-  btnSplitH?.addEventListener("click", () => {
-    vscode.postMessage({ type: "splitTmuxPane", direction: "h" });
-  });
-  btnKillPane?.addEventListener("click", () => {
-    vscode.postMessage({ type: "killTmuxPane" });
-  });
-}
-
-function setupDragAndDrop(_vscode: any): void {
-  const terminalElement = document.getElementById("terminal-container");
-  if (!terminalElement) return;
-
-  terminalElement.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    terminalElement.style.border = "2px dashed var(--vscode-focusBorder)";
-  });
-
-  terminalElement.addEventListener("dragleave", (e) => {
-    e.preventDefault();
-    terminalElement.style.border = "";
-  });
-
-  // NOTE: Drop handler is intentionally omitted here.
-  // The robust drop handler in initTerminal() handles file URI normalization
-  // and covers all drop scenarios (text/uri-list, vscode internal, File objects).
-}
-
-window.addEventListener("message", (event) => {
-  const message = event.data as HostMessage;
-
-  switch (message.type) {
-    case "terminalOutput":
-      if (terminal) {
-        terminal.write(message.data);
-      }
-      break;
-    case "terminalExited":
-      if (terminal) {
-        terminal.write("\r\n\x1b[31mOpenCode exited\x1b[0m\r\n");
-      }
-      break;
-    case "clearTerminal":
-      if (terminal) {
-        terminal.clear();
-        terminal.reset();
-        if (fitAddon) {
-          fitAddon.fit();
-          vscode.postMessage({
-            type: "terminalResize",
-            cols: terminal.cols,
-            rows: terminal.rows,
-          });
-        }
-      }
-      break;
-    case "focusTerminal":
-      if (terminal) {
-        terminal.focus();
-      }
-      break;
-    case "webviewVisible":
-      setTimeout(() => {
-        if (terminal && fitAddon) {
-          fitAddon.fit();
-          scheduleRefresh();
-          vscode.postMessage({
-            type: "terminalResize",
-            cols: terminal.cols,
-            rows: terminal.rows,
-          });
-        }
-      }, 50);
-      break;
-    case "platformInfo":
-      currentPlatform = message.platform;
-      break;
-    case "terminalConfig":
-      if (terminal) {
-        terminal.options.fontSize = message.fontSize;
-        terminal.options.fontFamily = message.fontFamily;
-        terminal.options.cursorBlink = message.cursorBlink;
-        terminal.options.cursorStyle = message.cursorStyle;
-        if (fitAddon) {
-          fitAddon.fit();
-        }
-        scheduleRefresh();
-      }
-      break;
-    case "clipboardContent":
-      if (message.text && terminal) {
-        terminal.paste(message.text);
-      }
-      break;
-    case "activeSession": {
-      const toolbar = document.getElementById("tmux-toolbar");
-      const label = document.getElementById("tmux-session-label");
-      const paneControls = document.getElementById("pane-controls");
-      if ("sessionName" in message && message.sessionName) {
-        if (toolbar) {
-          toolbar.classList.remove("hidden");
-        }
-        if (label) {
-          label.textContent = message.sessionName;
-        }
-        if (paneControls) {
-          paneControls.classList.remove("hidden");
-        }
-      } else {
-        if (toolbar) toolbar.classList.add("hidden");
-        if (paneControls) paneControls.classList.add("hidden");
-      }
-      break;
-    }
-    case "showAiToolSelector":
-      AiSelector.show(
-        message.sessionId,
-        message.sessionName,
-        message.defaultTool,
-        message.tools,
-      );
-      break;
-  }
-});
-
-// AI Tool Selector: keyboard navigation
 const aiCallbacks = {
   postMessage: (msg: unknown) => {
     const m = msg as Record<string, unknown>;
-    // Shared module uses "action", terminal webview uses "type"
     if (m && m.action === "launchAiTool") {
-      vscode.postMessage({
+      postMessage({
         type: "launchAiTool",
         sessionId: String(m.sessionId ?? ""),
         tool: String(m.tool ?? ""),
         savePreference: Boolean(m.savePreference),
+        targetPaneId: m.targetPaneId ? String(m.targetPaneId) : undefined,
       });
     }
   },
 };
 
-document.addEventListener("keydown", (event) => {
-  if (AiSelector.isVisible()) {
-    AiSelector.handleKeydown(event, aiCallbacks);
-  }
-});
+const tmuxPromptCallbacks = {
+  postMessage: (msg: unknown) => {
+    const m = msg as Record<string, unknown>;
+    if (m && m.type === "sendTmuxPromptChoice") {
+      postMessage({
+        type: "sendTmuxPromptChoice",
+        choice: String(m.choice) as "tmux" | "shell",
+      });
+    }
+  },
+};
 
-// AI Tool Selector: click handling
-document.addEventListener("click", (event) => {
-  if (!AiSelector.isVisible()) return;
-  const target = event
-    .composedPath()
-    .find((el): el is Element => el instanceof Element);
-  if (target) {
-    AiSelector.handleClick(target, aiCallbacks);
-  }
-});
+function setupAiToolSelectorEvents(): void {
+  document.addEventListener("keydown", (event) => {
+    // Cmd/Ctrl+Alt+M → toggle tmux command dropdown
+    // VS Code keybindings don't fire when xterm has focus,
+    // so we handle this directly in the webview.
+    const isToggleTmuxCmd =
+      event.altKey &&
+      (event.metaKey || event.ctrlKey) &&
+      event.key.toLowerCase() === "m";
+    if (isToggleTmuxCmd) {
+      if (currentSessionId) {
+        event.preventDefault();
+        if (TmuxCmd.isVisible()) {
+          TmuxCmd.hide();
+        } else {
+          TmuxCmd.show(currentSessionId);
+        }
+      }
+      return;
+    }
+
+    if (TmuxCmd.isVisible()) {
+      if (TmuxCmd.handleKeydown(event)) {
+        return;
+      }
+    }
+    if (AiSelector.isVisible()) {
+      AiSelector.handleKeydown(event, aiCallbacks);
+    }
+  });
+
+  document.addEventListener("click", (event) => {
+    const target = event
+      .composedPath()
+      .find((el): el is Element => el instanceof Element);
+    if (!target) return;
+
+    if (AiSelector.isVisible()) {
+      AiSelector.handleClick(target, aiCallbacks);
+    }
+
+    if (TmuxPrompt.isVisible()) {
+      TmuxPrompt.handleClick(target, tmuxPromptCallbacks);
+    }
+
+    if (TmuxCmd.isVisible()) {
+      if (
+        target.closest(".tmux-cmd-item") &&
+        !target.closest(".tmux-cmd-item.disabled")
+      ) {
+        TmuxCmd.handleClick(target);
+      } else if (
+        !target.closest("#tmux-command-dropdown") &&
+        !target.closest("#btn-tmux-commands")
+      ) {
+        TmuxCmd.hide();
+      }
+    }
+  });
+}
 
 const boot = () => {
-  // Wait for fonts to load before initializing xterm.js so the WebGL
-  // texture atlas is built with the correct Nerd Font glyphs.
   if (document.fonts && document.fonts.ready) {
-    document.fonts.ready.then(() => initTerminal());
+    document.fonts.ready.then(() => initApp());
   } else {
-    // Fallback for environments without document.fonts support
-    initTerminal();
+    initApp();
   }
 };
 

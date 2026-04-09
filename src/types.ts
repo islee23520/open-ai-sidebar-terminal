@@ -1,3 +1,44 @@
+export const TMUX_WEBVIEW_COMMAND_IDS = [
+  "opencodeTui.browseTmuxSessions",
+  "opencodeTui.createTmuxSession",
+  "opencodeTui.tmuxSwitchPane",
+  "opencodeTui.tmuxCreateWindow",
+  "opencodeTui.tmuxNextWindow",
+  "opencodeTui.tmuxPrevWindow",
+  "opencodeTui.tmuxSelectWindow",
+  "opencodeTui.tmuxKillWindow",
+  "opencodeTui.tmuxSplitPaneH",
+  "opencodeTui.tmuxSplitPaneV",
+  "opencodeTui.tmuxSplitPaneWithCommand",
+  "opencodeTui.tmuxSendTextToPane",
+  "opencodeTui.tmuxResizePane",
+  "opencodeTui.tmuxSwapPane",
+  "opencodeTui.tmuxKillPane",
+  "opencodeTui.tmuxKillSession",
+  "opencodeTui.tmuxRefresh",
+] as const;
+
+export type TmuxWebviewCommandId = (typeof TMUX_WEBVIEW_COMMAND_IDS)[number];
+
+export const TMUX_RAW_ALLOWED_SUBCOMMANDS = [
+  "rename-session",
+  "rename-window",
+  "last-window",
+  "last-pane",
+  "rotate-window",
+  "select-layout",
+  "display-panes",
+  "copy-mode",
+  "clear-history",
+  "detach-client",
+  "move-window",
+  "move-pane",
+  "respawn-pane",
+  "choose-tree",
+] as const;
+
+export type TmuxRawSubcommand = (typeof TMUX_RAW_ALLOWED_SUBCOMMANDS)[number];
+
 export type WebviewMessage =
   | { type: "terminalInput"; data: string }
   | { type: "terminalResize"; cols: number; rows: number }
@@ -31,6 +72,7 @@ export type WebviewMessage =
   | { type: "killSession"; sessionId: string }
   | { type: "createTmuxSession" }
   | { type: "createTmuxWindow" }
+  | { type: "createNativeShell" }
   | { type: "navigateTmuxWindow"; direction: "next" | "prev" }
   | { type: "navigateTmuxSession"; direction: "next" | "prev" }
   | { type: "switchNativeShell" }
@@ -39,9 +81,30 @@ export type WebviewMessage =
       sessionId: string;
       tool: string;
       savePreference: boolean;
+      targetPaneId?: string;
     }
   | { type: "splitTmuxPane"; direction: "h" | "v" }
-  | { type: "killTmuxPane" };
+  | { type: "zoomTmuxPane" }
+  | { type: "killTmuxPane" }
+  | { type: "toggleDashboard" }
+  | {
+      type: "dashboardAction";
+      action: string;
+      sessionId?: string;
+      windowId?: string;
+      paneId?: string;
+      direction?: string;
+    }
+  | { type: "openDashboardInEditor" }
+  | { type: "sendTmuxPromptChoice"; choice: "tmux" | "shell" }
+  | { type: "requestAiToolSelector" }
+  | { type: "executeTmuxCommand"; commandId: TmuxWebviewCommandId }
+  | {
+      type: "executeTmuxRawCommand";
+      subcommand: TmuxRawSubcommand;
+      args?: string[];
+    }
+  | { type: "requestRestart" };
 
 export type AiTool = string;
 
@@ -65,12 +128,12 @@ export const DEFAULT_AI_TOOLS: readonly AiToolConfig[] = [
     operator: "opencode",
   },
   {
-    name: "claude-code",
+    name: "claude",
     label: "Claude Code",
     path: "",
     args: [],
     aliases: ["claude"],
-    operator: "claude-code",
+    operator: "claude",
   },
   {
     name: "codex",
@@ -119,8 +182,16 @@ export function getToolLaunchCommand(tool: AiToolConfig): string {
 
 /** Get detection patterns for matching pane_current_command */
 export function getToolDetectionPatterns(tool: AiToolConfig): string[] {
-  const patterns: string[] = [tool.name];
-  patterns.push(`${tool.name}.exe`);
+  const patterns = new Set<string>([tool.name, `${tool.name}.exe`]);
+  if (tool.operator) {
+    patterns.add(tool.operator);
+    patterns.add(`${tool.operator}.exe`);
+  }
+  for (const alias of tool.aliases ?? []) {
+    patterns.add(alias);
+    patterns.add(`${alias}.exe`);
+  }
+  patterns.add(tool.label);
   if (tool.path) {
     const basename = tool.path
       .split("/")
@@ -129,10 +200,31 @@ export function getToolDetectionPatterns(tool: AiToolConfig): string[] {
       .pop()
       ?.replace(/\.exe$/i, "");
     if (basename && basename !== tool.name) {
-      patterns.push(basename);
+      patterns.add(basename);
     }
   }
-  return patterns;
+  return [...patterns];
+}
+
+export function detectAiToolName(
+  text: string | undefined,
+  tools: readonly AiToolConfig[],
+): string | undefined {
+  const haystack = text?.toLowerCase();
+  if (!haystack) {
+    return undefined;
+  }
+
+  for (const tool of tools) {
+    const patterns = getToolDetectionPatterns(tool).map((pattern) =>
+      pattern.toLowerCase(),
+    );
+    if (patterns.some((pattern) => pattern && haystack.includes(pattern))) {
+      return tool.name;
+    }
+  }
+
+  return undefined;
 }
 
 export type NativeShellDto = {
@@ -151,6 +243,12 @@ export type TmuxDashboardActionMessage =
   | { action: "activateNativeShell"; instanceId: string }
   | { action: "killNativeShell"; instanceId: string }
   | { action: "activate"; sessionId: string }
+  | {
+      action: "showAiToolSelector";
+      sessionId: string;
+      sessionName: string;
+      targetPaneId?: string;
+    }
   | { action: "expandPanes"; sessionId: string }
   | { action: "createWindow"; sessionId: string }
   | { action: "nextWindow"; sessionId: string }
@@ -196,6 +294,7 @@ export type TmuxDashboardActionMessage =
       sessionId: string;
       tool: string;
       savePreference: boolean;
+      targetPaneId?: string;
     };
 
 export type TmuxDashboardSessionDto = {
@@ -204,6 +303,7 @@ export type TmuxDashboardSessionDto = {
   workspace: string;
   isActive: boolean;
   paneCount?: number;
+  preview?: string;
 };
 
 export type TmuxDashboardPaneDto = {
@@ -212,7 +312,14 @@ export type TmuxDashboardPaneDto = {
   title: string;
   isActive: boolean;
   currentCommand?: string;
+  panePid?: number;
+  resolvedTool?: string;
   windowId?: string;
+  currentPath?: string;
+  paneLeft?: number;
+  paneTop?: number;
+  paneWidth?: number;
+  paneHeight?: number;
 };
 
 export type TmuxDashboardWindowDto = {
@@ -233,6 +340,7 @@ export type TmuxDashboardHostMessage =
       panes?: Record<string, TmuxDashboardPaneDto[]>;
       showingAll?: boolean;
       tools?: AiToolConfig[];
+      tmuxAvailable?: boolean;
     }
   | {
       type: "showAiToolSelector";
@@ -240,6 +348,7 @@ export type TmuxDashboardHostMessage =
       sessionName: string;
       defaultTool?: string;
       tools?: AiToolConfig[];
+      targetPaneId?: string;
     };
 
 export const ALLOWED_IMAGE_TYPES = [
@@ -272,7 +381,7 @@ export type HostMessage =
   | { type: "clearTerminal" }
   | { type: "focusTerminal" }
   | { type: "webviewVisible" }
-  | { type: "platformInfo"; platform: string }
+  | { type: "platformInfo"; platform: string; tmuxAvailable?: boolean }
   | {
       type: "terminalConfig";
       fontSize: number;
@@ -285,6 +394,10 @@ export type HostMessage =
       type: "activeSession";
       sessionName: string;
       sessionId: string;
+      windowIndex?: number;
+      windowName?: string;
+      paneHasAiTool?: boolean;
+      canKillPane?: boolean;
     }
   | { type: "activeSession" }
   | {
@@ -293,6 +406,20 @@ export type HostMessage =
       sessionName: string;
       defaultTool?: string;
       tools?: AiToolConfig[];
+      targetPaneId?: string;
+    }
+  | {
+      type: "updateDashboard";
+      sessions: TmuxDashboardSessionDto[];
+      workspace: string;
+      showingAll?: boolean;
+    }
+  | { type: "toggleDashboard"; visible: boolean }
+  | { type: "toggleTmuxCommandToolbar" }
+  | {
+      type: "showTmuxPrompt";
+      workspaceName: string;
+      tmuxAvailable?: boolean;
     };
 
 export type LogLevel = "debug" | "info" | "warn" | "error";

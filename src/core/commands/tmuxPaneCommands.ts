@@ -14,6 +14,10 @@ type PaneQuickPickItem = {
 export interface TmuxPaneCommandDependencies {
   tmuxManager: TmuxSessionManager | undefined;
   resolveActiveTmuxSessionId: () => string | undefined;
+  resolveActiveTmuxFocus: () => Promise<
+    { sessionId: string; windowId: string; paneId: string } | undefined
+  >;
+  resolveWorkspacePath: () => string | undefined;
   provider: TerminalProvider | undefined;
 }
 
@@ -43,13 +47,13 @@ async function sendTextToTmuxPane(
   await tmuxManager.sendTextToPane(paneId, text);
 }
 
-async function pickPaneFromActiveSession(
+async function pickPaneFromSession(
   deps: TmuxPaneCommandDependencies,
+  sessionId: string,
   placeHolder: string,
   includeActiveMarker: boolean = false,
 ): Promise<PaneQuickPickItem | undefined> {
-  const sessionId = deps.resolveActiveTmuxSessionId();
-  if (!sessionId || !deps.tmuxManager) {
+  if (!deps.tmuxManager) {
     return undefined;
   }
   const panes = await listTmuxPanes(deps.tmuxManager, sessionId);
@@ -111,8 +115,11 @@ export function registerTmuxPaneCommands(
         await deps.tmuxManager.selectPane(item.paneId);
         return;
       }
-      const selected = await pickPaneFromActiveSession(
+      const sessionId = await resolveFocusedSessionId();
+      if (!sessionId) return;
+      const selected = await pickPaneFromSession(
         deps,
+        sessionId,
         "Select pane to switch to",
         true,
       );
@@ -122,19 +129,47 @@ export function registerTmuxPaneCommands(
     },
   );
 
+  async function resolveFocusedContext(): Promise<
+    { sessionId: string; paneId: string } | undefined
+  > {
+    const focus = await deps.resolveActiveTmuxFocus();
+    if (focus) {
+      return { sessionId: focus.sessionId, paneId: focus.paneId };
+    }
+    const sessionId = deps.resolveActiveTmuxSessionId();
+    if (!sessionId || !deps.tmuxManager) return undefined;
+    try {
+      const panes = await deps.tmuxManager.listPanes(sessionId);
+      const active = panes.find((p) => p.isActive) ?? panes[0];
+      if (!active) return undefined;
+      return { sessionId, paneId: active.paneId };
+    } catch {
+      return undefined;
+    }
+  }
+
+  async function resolveFocusedSessionId(): Promise<string | undefined> {
+    const focus = await deps.resolveActiveTmuxFocus();
+    return focus?.sessionId ?? deps.resolveActiveTmuxSessionId();
+  }
+
   const tmuxSplitPaneHCommand = vscode.commands.registerCommand(
     "opencodeTui.tmuxSplitPaneH",
     async (item?: { paneId?: string; sessionId: string }) => {
       if (!deps.tmuxManager) {
         return;
       }
-      const sessionId = item?.sessionId ?? deps.resolveActiveTmuxSessionId();
-      if (!sessionId) {
-        return;
+      let targetPaneId = item?.paneId;
+      if (!targetPaneId) {
+        const focused = await resolveFocusedContext();
+        if (!focused) return;
+        targetPaneId = focused.paneId;
       }
       try {
-        await deps.tmuxManager.splitPane(item?.paneId ?? sessionId, "h");
-        deps.provider?.showAiToolSelector(sessionId, sessionId);
+        const cwd = deps.resolveWorkspacePath();
+        await deps.tmuxManager.splitPane(targetPaneId, "h", {
+          workingDirectory: cwd,
+        });
       } catch {
         vscode.window.showErrorMessage("Failed to split pane");
       }
@@ -147,13 +182,17 @@ export function registerTmuxPaneCommands(
       if (!deps.tmuxManager) {
         return;
       }
-      const sessionId = item?.sessionId ?? deps.resolveActiveTmuxSessionId();
-      if (!sessionId) {
-        return;
+      let targetPaneId = item?.paneId;
+      if (!targetPaneId) {
+        const focused = await resolveFocusedContext();
+        if (!focused) return;
+        targetPaneId = focused.paneId;
       }
       try {
-        await deps.tmuxManager.splitPane(item?.paneId ?? sessionId, "v");
-        deps.provider?.showAiToolSelector(sessionId, sessionId);
+        const cwd = deps.resolveWorkspacePath();
+        await deps.tmuxManager.splitPane(targetPaneId, "v", {
+          workingDirectory: cwd,
+        });
       } catch {
         vscode.window.showErrorMessage("Failed to split pane");
       }
@@ -166,10 +205,6 @@ export function registerTmuxPaneCommands(
       if (!deps.tmuxManager) {
         return;
       }
-      const sessionId = item?.sessionId ?? deps.resolveActiveTmuxSessionId();
-      if (!sessionId) {
-        return;
-      }
       const command = await vscode.window.showInputBox({
         prompt: "Enter command to run in new pane",
         placeHolder: "e.g., htop, vim, npm run dev",
@@ -177,9 +212,16 @@ export function registerTmuxPaneCommands(
       if (!command) {
         return;
       }
+      let targetPaneId = item?.paneId;
+      if (!targetPaneId) {
+        const focused = await resolveFocusedContext();
+        if (!focused) return;
+        targetPaneId = focused.paneId;
+      }
       try {
-        await deps.tmuxManager.splitPane(item?.paneId ?? sessionId, "v", {
+        await deps.tmuxManager.splitPane(targetPaneId, "v", {
           command,
+          workingDirectory: deps.resolveWorkspacePath(),
         });
       } catch {
         vscode.window.showErrorMessage("Failed to split pane");
@@ -203,7 +245,9 @@ export function registerTmuxPaneCommands(
         return;
       }
 
-      const selected = await pickPaneFromActiveSession(deps, "Select pane");
+      const sessionId = await resolveFocusedSessionId();
+      if (!sessionId) return;
+      const selected = await pickPaneFromSession(deps, sessionId, "Select pane");
       if (!selected) {
         return;
       }
@@ -224,8 +268,11 @@ export function registerTmuxPaneCommands(
       }
       const paneId = item?.paneId;
       if (!paneId) {
-        const selected = await pickPaneFromActiveSession(
+        const sessionId = await resolveFocusedSessionId();
+        if (!sessionId) return;
+        const selected = await pickPaneFromSession(
           deps,
+          sessionId,
           "Select pane to resize",
         );
         if (!selected) {
@@ -265,7 +312,7 @@ export function registerTmuxPaneCommands(
       if (!deps.tmuxManager) {
         return;
       }
-      const sessionId = deps.resolveActiveTmuxSessionId();
+      const sessionId = await resolveFocusedSessionId();
       if (!sessionId) {
         return;
       }
@@ -322,7 +369,7 @@ export function registerTmuxPaneCommands(
       if (!deps.tmuxManager) {
         return;
       }
-      const sessionId = deps.resolveActiveTmuxSessionId();
+      const sessionId = await resolveFocusedSessionId();
       if (!sessionId) {
         return;
       }
@@ -383,7 +430,7 @@ export function registerTmuxPaneCommands(
     "opencodeTui.tmuxNextWindow",
     async () => {
       if (!deps.tmuxManager) return;
-      const sessionId = deps.resolveActiveTmuxSessionId();
+      const sessionId = await resolveFocusedSessionId();
       if (!sessionId) return;
       try {
         await deps.tmuxManager.nextWindow(sessionId);
@@ -397,7 +444,7 @@ export function registerTmuxPaneCommands(
     "opencodeTui.tmuxPrevWindow",
     async () => {
       if (!deps.tmuxManager) return;
-      const sessionId = deps.resolveActiveTmuxSessionId();
+      const sessionId = await resolveFocusedSessionId();
       if (!sessionId) return;
       try {
         await deps.tmuxManager.prevWindow(sessionId);
@@ -411,11 +458,10 @@ export function registerTmuxPaneCommands(
     "opencodeTui.tmuxCreateWindow",
     async () => {
       if (!deps.tmuxManager) return;
-      const sessionId = deps.resolveActiveTmuxSessionId();
+      const sessionId = await resolveFocusedSessionId();
       if (!sessionId) return;
       try {
-        await deps.tmuxManager.createWindow(sessionId);
-        deps.provider?.showAiToolSelector(sessionId, sessionId);
+        await deps.tmuxManager.createWindow(sessionId, deps.resolveWorkspacePath());
       } catch {
         vscode.window.showErrorMessage("Failed to create window");
       }
@@ -426,7 +472,7 @@ export function registerTmuxPaneCommands(
     "opencodeTui.tmuxKillWindow",
     async (item?: { windowId: string }) => {
       if (!deps.tmuxManager) return;
-      const sessionId = deps.resolveActiveTmuxSessionId();
+      const sessionId = await resolveFocusedSessionId();
       if (!sessionId) return;
       let windowId = item?.windowId;
       if (!windowId) {
@@ -460,7 +506,7 @@ export function registerTmuxPaneCommands(
     "opencodeTui.tmuxSelectWindow",
     async (item?: { windowId: string }) => {
       if (!deps.tmuxManager) return;
-      const sessionId = deps.resolveActiveTmuxSessionId();
+      const sessionId = await resolveFocusedSessionId();
       if (!sessionId) return;
       let windowId = item?.windowId;
       if (!windowId) {
@@ -488,7 +534,7 @@ export function registerTmuxPaneCommands(
     "opencodeTui.tmuxKillSession",
     async (item?: { sessionId: string }) => {
       if (!deps.tmuxManager) return;
-      const sessionId = item?.sessionId ?? deps.resolveActiveTmuxSessionId();
+      const sessionId = item?.sessionId ?? (await resolveFocusedSessionId());
       if (!sessionId) return;
       const confirm = await vscode.window.showWarningMessage(
         `Kill tmux session "${sessionId}"?`,
@@ -507,9 +553,7 @@ export function registerTmuxPaneCommands(
   const tmuxRefreshCommand = vscode.commands.registerCommand(
     "opencodeTui.tmuxRefresh",
     async () => {
-      await vscode.commands.executeCommand(
-        "opencodeTui.terminalDashboard.focus",
-      );
+      await vscode.commands.executeCommand("opencodeTui.openTerminalManager");
     },
   );
 

@@ -190,6 +190,13 @@ export function registerTerminalCommands(
     },
   );
 
+  const openInEditorCommand = vscode.commands.registerCommand(
+    "opencodeTui.openTerminalInEditor",
+    () => {
+      deps.provider?.openInEditorTab();
+    },
+  );
+
   return [
     startCommand,
     sendToTerminalCommand,
@@ -198,5 +205,6 @@ export function registerTerminalCommands(
     sendFileToTerminalCommand,
     pasteCommand,
     focusCommand,
+    openInEditorCommand,
   ];
 }

@@ -16,7 +16,6 @@ export interface InstanceConfig {
   id: InstanceId;
   workspaceUri?: string;
   label?: string;
-  command?: string;
   args?: string[];
   selectedAiTool?: string;
   preferredPort?: number;

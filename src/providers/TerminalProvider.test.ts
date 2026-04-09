@@ -55,32 +55,27 @@ describe("TerminalProvider", () => {
   function mockConfiguration(options?: {
     autoStartOnOpen?: boolean;
     enableHttpApi?: boolean;
-    command?: string;
     defaultAiTool?: string;
     aiTools?: readonly unknown[];
     nativeShellDefault?: string;
     tmuxSessionDefault?: string;
-  }): void {
+  }) {
     const {
       autoStartOnOpen = false,
       enableHttpApi = false,
-      command = "opencode -c",
       defaultAiTool = "opencode",
       aiTools = DEFAULT_AI_TOOLS,
       nativeShellDefault = "",
       tmuxSessionDefault = "",
     } = options ?? {};
 
-    vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
+    const configuration = {
       get: vi.fn((key: string, defaultValue?: unknown) => {
         if (key === "autoStartOnOpen") {
           return autoStartOnOpen;
         }
         if (key === "enableHttpApi") {
           return enableHttpApi;
-        }
-        if (key === "command") {
-          return command;
         }
         if (key === "defaultAiTool") {
           return defaultAiTool;
@@ -103,7 +98,13 @@ describe("TerminalProvider", () => {
         return defaultValue;
       }),
       update: vi.fn(),
-    } as any);
+    };
+
+    vi.mocked(vscode.workspace.getConfiguration).mockReturnValue(
+      configuration as any,
+    );
+
+    return configuration;
   }
 
   function createProvider(options?: {
@@ -132,8 +133,9 @@ describe("TerminalProvider", () => {
   }
 
   async function flushAsyncStartup(): Promise<void> {
-    await Promise.resolve();
-    await Promise.resolve();
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+    }
   }
 
   it("routes switchSession messages through tmux session switching", () => {
@@ -196,10 +198,120 @@ describe("TerminalProvider", () => {
     });
     await Promise.resolve();
 
-    expect(launchSpy).toHaveBeenCalledWith("tmux-a", "codex", true);
+    expect(launchSpy).toHaveBeenCalledWith("tmux-a", "codex", true, undefined);
   });
 
-  it("starts the default terminal path without sidebar tree interaction", async () => {
+  it("opens the AI tool selector for explicit manual requests", async () => {
+    mockConfiguration();
+    provider = createProvider();
+    const { messageHandler } = resolveProvider(provider);
+    const showSpy = vi
+      .spyOn(provider, "showAiToolSelector")
+      .mockResolvedValue(undefined);
+
+    messageHandler({ type: "requestAiToolSelector" });
+    await Promise.resolve();
+
+    expect(showSpy).toHaveBeenCalledWith(
+      "opencode-main",
+      "opencode-main",
+      true,
+      undefined,
+    );
+  });
+
+  it("does not auto-open the AI tool selector after tmux window creation", async () => {
+    mockConfiguration();
+    provider = createProvider();
+    const { messageHandler } = resolveProvider(provider);
+    vi.spyOn(provider, "createTmuxWindow").mockImplementation(
+      async () => ({ windowId: "@1", paneId: "%8" }) as any,
+    );
+    vi.spyOn(provider, "getSelectedTmuxSessionId").mockReturnValue("tmux-a");
+    const showSpy = vi
+      .spyOn(provider, "showAiToolSelector")
+      .mockResolvedValue(undefined);
+
+    messageHandler({ type: "createTmuxWindow" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(showSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not auto-open the AI tool selector after tmux pane split", async () => {
+    mockConfiguration();
+    provider = createProvider();
+    const { messageHandler } = resolveProvider(provider);
+    vi.spyOn(provider, "splitTmuxPane").mockResolvedValue("%8");
+    vi.spyOn(provider, "getSelectedTmuxSessionId").mockReturnValue("tmux-a");
+    const showSpy = vi
+      .spyOn(provider, "showAiToolSelector")
+      .mockResolvedValue(undefined);
+
+    messageHandler({ type: "splitTmuxPane", direction: "h" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(showSpy).not.toHaveBeenCalled();
+  });
+
+  it("routes zoomTmuxPane messages through the provider zoom path", async () => {
+    mockConfiguration();
+    provider = createProvider();
+    const { messageHandler } = resolveProvider(provider);
+    const zoomSpy = vi.spyOn(provider, "zoomTmuxPane").mockResolvedValue();
+
+    messageHandler({ type: "zoomTmuxPane" });
+    await Promise.resolve();
+
+    expect(zoomSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes executeTmuxRawCommand messages through the provider raw tmux path", async () => {
+    mockConfiguration();
+    provider = createProvider();
+    const { messageHandler } = resolveProvider(provider);
+    const rawSpy = vi
+      .spyOn(provider, "executeRawTmuxCommand")
+      .mockResolvedValue("");
+
+    messageHandler({
+      type: "executeTmuxRawCommand",
+      subcommand: "choose-tree",
+    });
+    await Promise.resolve();
+
+    expect(rawSpy).toHaveBeenCalledWith("choose-tree", undefined);
+  });
+
+  it("opens the terminal renderer in an editor tab", () => {
+    mockConfiguration();
+    provider = createProvider();
+    resolveProvider(provider);
+
+    provider.openInEditorTab();
+
+    expect(vscode.window.createWebviewPanel).toHaveBeenCalledWith(
+      "opencodeTui.terminalEditor",
+      "Open Sidebar Terminal",
+      vscode.ViewColumn.Beside,
+      expect.objectContaining({
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: expect.any(Array),
+      }),
+    );
+
+    const panel = vi.mocked(vscode.window.createWebviewPanel).mock.results[0]
+      ?.value as any;
+    provider.focus();
+    expect(panel.webview.postMessage).toHaveBeenCalledWith({
+      type: "focusTerminal",
+    });
+  });
+
+  it("starts default shell for non-tmux session without sidebar tree interaction", async () => {
     mockConfiguration({ autoStartOnOpen: false, enableHttpApi: false });
     provider = createProvider();
     const createTerminalSpy = vi.spyOn(terminalManager, "createTerminal");
@@ -210,17 +322,17 @@ describe("TerminalProvider", () => {
 
     expect(createTerminalSpy).toHaveBeenCalledWith(
       "opencode-main",
-      "opencode -c",
+      undefined,
       {},
       undefined,
       120,
       40,
       "opencode-main",
-      expect.any(String),
+      os.homedir(),
     );
   });
 
-  it("starts codex when configured as the default AI tool", async () => {
+  it("ignores defaultAiTool config for non-tmux sessions and starts default shell", async () => {
     mockConfiguration({
       autoStartOnOpen: false,
       enableHttpApi: false,
@@ -235,7 +347,7 @@ describe("TerminalProvider", () => {
 
     expect(createTerminalSpy).toHaveBeenCalledWith(
       "opencode-main",
-      "codex",
+      undefined,
       {},
       undefined,
       120,
@@ -848,7 +960,7 @@ describe("TerminalProvider", () => {
     const resizeSpy = vi.spyOn(terminalManager, "resizeTerminal");
     terminalManager.createTerminal(
       "session-b",
-      "opencode -c",
+      "opencode",
       {},
       undefined,
       undefined,
@@ -898,5 +1010,565 @@ describe("TerminalProvider", () => {
     expect(view.webview.postMessage).toHaveBeenCalledWith({
       type: "clearTerminal",
     });
+  });
+
+  it("normalizes workspace session ids when auto-launching a saved AI tool", () => {
+    mockConfiguration({ defaultAiTool: "opencode" });
+    const instanceStore = new InstanceStore();
+    instanceStore.upsert({
+      config: {
+        id: "workspace-saved-tool",
+        workspaceUri: "file:///workspaces/repo-saved-tool",
+        selectedAiTool: "codex",
+      },
+      runtime: {
+        terminalKey: "workspace-saved-tool",
+        tmuxSessionId: "tmux-saved-tool",
+      },
+      state: "connected",
+    });
+
+    provider = createProvider({ instanceStore });
+    const launchSpy = vi.spyOn(provider, "launchAiTool").mockResolvedValue();
+
+    provider.showAiToolSelector(
+      "repo-saved-tool",
+      "Repo Saved Tool",
+      false,
+      "%22",
+    );
+
+    expect(launchSpy).toHaveBeenCalledWith(
+      "tmux-saved-tool",
+      "codex",
+      false,
+      "%22",
+    );
+  });
+
+  it("uses the configured default AI tool when no instance preference exists", () => {
+    mockConfiguration({ defaultAiTool: "claude" });
+    const instanceStore = new InstanceStore();
+    instanceStore.upsert({
+      config: {
+        id: "workspace-default-tool",
+        workspaceUri: "file:///workspaces/repo-default-tool",
+      },
+      runtime: {
+        terminalKey: "workspace-default-tool",
+        tmuxSessionId: "tmux-default-tool",
+      },
+      state: "connected",
+    });
+
+    provider = createProvider({ instanceStore });
+    const launchSpy = vi.spyOn(provider, "launchAiTool").mockResolvedValue();
+
+    provider.showAiToolSelector("repo-default-tool", "Repo Default Tool");
+
+    expect(launchSpy).toHaveBeenCalledWith(
+      "tmux-default-tool",
+      "claude",
+      false,
+      undefined,
+    );
+  });
+
+  it("forces the AI tool selector to render even when a saved tool exists", () => {
+    mockConfiguration({ defaultAiTool: "opencode" });
+    const instanceStore = new InstanceStore();
+    instanceStore.upsert({
+      config: {
+        id: "workspace-force-show",
+        workspaceUri: "file:///workspaces/repo-force-show",
+        selectedAiTool: "codex",
+      },
+      runtime: {
+        terminalKey: "workspace-force-show",
+        tmuxSessionId: "tmux-force-show",
+      },
+      state: "connected",
+    });
+
+    provider = createProvider({ instanceStore });
+    const launchSpy = vi.spyOn(provider, "launchAiTool").mockResolvedValue();
+    const { view } = resolveProvider(provider);
+
+    provider.showAiToolSelector(
+      "repo-force-show",
+      "Repo Force Show",
+      true,
+      "%9",
+    );
+
+    expect(launchSpy).not.toHaveBeenCalled();
+    expect(view.webview.postMessage).toHaveBeenCalledWith({
+      type: "showAiToolSelector",
+      sessionId: "tmux-force-show",
+      sessionName: "Repo Force Show",
+      defaultTool: undefined,
+      tools: DEFAULT_AI_TOOLS,
+      targetPaneId: "%9",
+    });
+  });
+
+  it("launches AI tools against the normalized tmux session and active pane", async () => {
+    const configuration = mockConfiguration();
+    const instanceStore = new InstanceStore();
+    instanceStore.upsert({
+      config: {
+        id: "workspace-launch",
+        workspaceUri: "file:///workspaces/repo-launch",
+      },
+      runtime: {
+        terminalKey: "workspace-launch",
+        tmuxSessionId: "tmux-launch",
+      },
+      state: "connected",
+    });
+    const listPanes = vi.fn().mockResolvedValue([
+      { paneId: "%1", isActive: false },
+      { paneId: "%2", isActive: true },
+    ]);
+    const sendTextToPane = vi.fn().mockResolvedValue(undefined);
+    const tmuxSessionManager = {
+      listPanes,
+      sendTextToPane,
+    } as unknown as TmuxSessionManager;
+
+    provider = createProvider({ instanceStore, tmuxSessionManager });
+
+    await provider.launchAiTool("repo-launch", "codex", true);
+
+    expect(configuration.update).toHaveBeenCalledWith(
+      "defaultAiTool",
+      "codex",
+      vscode.ConfigurationTarget.Global,
+    );
+    expect(listPanes).toHaveBeenCalledWith("tmux-launch", {
+      activeWindowOnly: true,
+    });
+    expect(sendTextToPane).toHaveBeenCalledWith("%2", "codex");
+    expect(instanceStore.get("workspace-launch")?.config.selectedAiTool).toBe(
+      "codex",
+    );
+  });
+
+  it("uses the provided pane id and original session id when no tmux mapping exists", async () => {
+    mockConfiguration();
+    const instanceStore = new InstanceStore();
+    instanceStore.upsert({
+      config: {
+        id: "workspace-direct-pane",
+        workspaceUri: "file:///workspaces/repo-direct-pane",
+      },
+      runtime: {
+        terminalKey: "workspace-direct-pane",
+      },
+      state: "connected",
+    });
+    const listPanes = vi.fn();
+    const sendTextToPane = vi.fn().mockResolvedValue(undefined);
+    const tmuxSessionManager = {
+      listPanes,
+      sendTextToPane,
+    } as unknown as TmuxSessionManager;
+
+    provider = createProvider({ instanceStore, tmuxSessionManager });
+
+    await provider.launchAiTool("repo-direct-pane", "opencode", false, "%77");
+
+    expect(listPanes).not.toHaveBeenCalled();
+    expect(sendTextToPane).toHaveBeenCalledWith("%77", "opencode -c");
+    expect(
+      instanceStore.get("workspace-direct-pane")?.config.selectedAiTool,
+    ).toBe("opencode");
+  });
+
+  it("saves the tool preference even when tmux is unavailable", async () => {
+    const configuration = mockConfiguration();
+    provider = createProvider();
+
+    await provider.launchAiTool("repo-no-tmux", "claude", true);
+
+    expect(configuration.update).toHaveBeenCalledWith(
+      "defaultAiTool",
+      "claude",
+      vscode.ConfigurationTarget.Global,
+    );
+  });
+
+  it("returns early when the requested AI tool is not configured", async () => {
+    const configuration = mockConfiguration();
+    const listPanes = vi.fn();
+    const sendTextToPane = vi.fn();
+    const tmuxSessionManager = {
+      listPanes,
+      sendTextToPane,
+    } as unknown as TmuxSessionManager;
+
+    provider = createProvider({ tmuxSessionManager });
+
+    await provider.launchAiTool("repo-missing-tool", "missing-tool", true);
+
+    expect(configuration.update).toHaveBeenCalledWith(
+      "defaultAiTool",
+      "missing-tool",
+      vscode.ConfigurationTarget.Global,
+    );
+    expect(listPanes).not.toHaveBeenCalled();
+    expect(sendTextToPane).not.toHaveBeenCalled();
+  });
+
+  it("warns when no tmux pane can be resolved for AI tool launch", async () => {
+    mockConfiguration();
+    const listPanes = vi.fn().mockResolvedValue([]);
+    const sendTextToPane = vi.fn();
+    const tmuxSessionManager = {
+      listPanes,
+      sendTextToPane,
+    } as unknown as TmuxSessionManager;
+
+    provider = createProvider({ tmuxSessionManager });
+    const warnSpy = vi.spyOn((provider as any).logger, "warn");
+
+    await provider.launchAiTool("repo-no-pane", "codex", false);
+
+    expect(sendTextToPane).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("launchAiTool skipped: no target pane"),
+    );
+  });
+
+  it("warns when tmux commands fail during AI tool launch", async () => {
+    mockConfiguration();
+    const tmuxSessionManager = {
+      listPanes: vi.fn().mockRejectedValue(new Error("tmux unavailable")),
+      sendTextToPane: vi.fn(),
+    } as unknown as TmuxSessionManager;
+
+    provider = createProvider({ tmuxSessionManager });
+    const warnSpy = vi.spyOn((provider as any).logger, "warn");
+
+    await provider.launchAiTool("repo-launch-error", "codex", false);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to launch AI tool: tmux unavailable"),
+    );
+  });
+
+  it("sends prompts through the HTTP client when available", async () => {
+    mockConfiguration();
+    provider = createProvider();
+    const appendPrompt = vi.fn().mockResolvedValue(undefined);
+    const runtime = (provider as any).sessionRuntime;
+
+    vi.spyOn(runtime, "getApiClient").mockReturnValue({ appendPrompt } as any);
+    vi.spyOn(runtime, "isHttpAvailable").mockReturnValue(true);
+    const writeSpy = vi.spyOn(terminalManager, "writeToTerminal");
+
+    await provider.sendPrompt("hello via http");
+
+    expect(appendPrompt).toHaveBeenCalledWith("hello via http");
+    expect(writeSpy).not.toHaveBeenCalled();
+  });
+
+  it("falls back to terminal writes when the HTTP prompt append fails", async () => {
+    mockConfiguration();
+    provider = createProvider();
+    const appendPrompt = vi.fn().mockRejectedValue(new Error("network down"));
+    const runtime = (provider as any).sessionRuntime;
+
+    vi.spyOn(runtime, "getApiClient").mockReturnValue({ appendPrompt } as any);
+    vi.spyOn(runtime, "isHttpAvailable").mockReturnValue(true);
+    const writeSpy = vi.spyOn(terminalManager, "writeToTerminal");
+    const warnSpy = vi.spyOn((provider as any).logger, "warn");
+
+    await provider.sendPrompt("hello fallback");
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "HTTP API send failed, falling back to terminal write: network down",
+      ),
+    );
+    expect(writeSpy).toHaveBeenCalledWith("opencode-main", "hello fallback");
+  });
+
+  it("resets stale runtime state and starts immediately when a visible webview opens", () => {
+    mockConfiguration({ autoStartOnOpen: true });
+    provider = createProvider();
+    const runtime = (provider as any).sessionRuntime;
+
+    vi.spyOn(runtime, "hasLiveTerminalProcess").mockReturnValue(false);
+    vi.spyOn(runtime, "isStartedFlag")
+      .mockReturnValueOnce(true)
+      .mockReturnValue(false);
+    const resetStateSpy = vi.spyOn(runtime, "resetState");
+    const startSpy = vi.spyOn(provider, "startOpenCode").mockResolvedValue();
+
+    resolveProvider(provider);
+
+    expect(resetStateSpy).toHaveBeenCalledTimes(1);
+    expect(startSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for visibility before auto-starting hidden webviews", () => {
+    mockConfiguration({ autoStartOnOpen: true });
+    provider = createProvider();
+    const view = vscode.WebviewView() as any;
+    view.visible = false;
+    const startSpy = vi.spyOn(provider, "startOpenCode").mockResolvedValue();
+
+    provider.resolveWebviewView(view, {} as any, {} as any);
+
+    expect(startSpy).not.toHaveBeenCalled();
+
+    const visibilityListener = vi.mocked(view.onDidChangeVisibility).mock
+      .calls[0]?.[0] as () => void;
+    view.visible = true;
+    visibilityListener();
+
+    expect(view.webview.postMessage).toHaveBeenCalledWith({
+      type: "webviewVisible",
+    });
+    expect(startSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("reuses an existing editor panel instead of creating another one", () => {
+    mockConfiguration();
+    provider = createProvider();
+    resolveProvider(provider);
+
+    provider.openInEditorTab();
+    const panel = vi.mocked(vscode.window.createWebviewPanel).mock.results[0]
+      ?.value as any;
+    const focusSpy = vi.spyOn(provider, "focus");
+
+    provider.openInEditorTab();
+
+    expect(vscode.window.createWebviewPanel).toHaveBeenCalledTimes(1);
+    expect(panel.reveal).toHaveBeenCalledWith(vscode.ViewColumn.Active);
+    expect(focusSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("executes the dashboard command when toggling the dashboard", () => {
+    mockConfiguration();
+    provider = createProvider();
+
+    provider.toggleDashboard();
+
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+      "opencodeTui.openTerminalManager",
+    );
+  });
+
+  it("posts a webview message when toggling the tmux command toolbar", () => {
+    mockConfiguration();
+    provider = createProvider();
+    const runtime = (provider as any).sessionRuntime;
+    vi.spyOn(runtime, "getSelectedTmuxSessionId").mockReturnValue(
+      "tmux-selected",
+    );
+    const { view } = resolveProvider(provider);
+
+    provider.toggleTmuxCommandToolbar();
+
+    expect(view.webview.postMessage).toHaveBeenCalledWith({
+      type: "toggleTmuxCommandToolbar",
+    });
+  });
+
+  it("posts a webview message when the active instance has a tmux session", () => {
+    mockConfiguration();
+    provider = createProvider();
+    const runtime = (provider as any).sessionRuntime;
+    vi.spyOn(runtime, "getSelectedTmuxSessionId").mockReturnValue(undefined);
+    vi.spyOn(runtime, "resolveTmuxSessionIdForInstance").mockReturnValue(
+      "tmux-active",
+    );
+    const { view } = resolveProvider(provider);
+
+    provider.toggleTmuxCommandToolbar();
+
+    expect(view.webview.postMessage).toHaveBeenCalledWith({
+      type: "toggleTmuxCommandToolbar",
+    });
+  });
+
+  it("does not post a webview message when no tmux session is attached", () => {
+    mockConfiguration();
+    provider = createProvider();
+    const runtime = (provider as any).sessionRuntime;
+    vi.spyOn(runtime, "getSelectedTmuxSessionId").mockReturnValue(undefined);
+    vi.spyOn(runtime, "resolveTmuxSessionIdForInstance").mockReturnValue(
+      undefined,
+    );
+    const { view } = resolveProvider(provider);
+
+    provider.toggleTmuxCommandToolbar();
+
+    expect(view.webview.postMessage).not.toHaveBeenCalledWith({
+      type: "toggleTmuxCommandToolbar",
+    });
+  });
+
+  it("delegates public runtime wrapper methods to SessionRuntime", async () => {
+    mockConfiguration();
+    provider = createProvider();
+    const runtime = (provider as any).sessionRuntime;
+    const apiClient = { appendPrompt: vi.fn() };
+    const fileReference = "@src/example.ts#L1-L3";
+
+    vi.spyOn(runtime, "getApiClient").mockReturnValue(apiClient as any);
+    vi.spyOn(runtime, "isHttpAvailable").mockReturnValue(true);
+    const restartSpy = vi
+      .spyOn(runtime, "restart")
+      .mockImplementation(() => {});
+    const switchToInstanceSpy = vi
+      .spyOn(runtime, "switchToInstance")
+      .mockResolvedValue(undefined);
+    const switchToTmuxSpy = vi
+      .spyOn(runtime, "switchToTmuxSession")
+      .mockResolvedValue(undefined);
+    vi.spyOn(runtime, "resolveInstanceIdFromSessionId").mockReturnValue(
+      "workspace-wrapper",
+    );
+    const switchToNativeSpy = vi
+      .spyOn(runtime, "switchToNativeShell")
+      .mockResolvedValue(undefined);
+    vi.spyOn(runtime, "createTmuxSession").mockResolvedValue("tmux-wrapper");
+    const createWindowSpy = vi
+      .spyOn(runtime, "createTmuxWindow")
+      .mockResolvedValue(undefined);
+    const navigateWindowSpy = vi
+      .spyOn(runtime, "navigateTmuxWindow")
+      .mockResolvedValue(undefined);
+    const navigateSessionSpy = vi
+      .spyOn(runtime, "navigateTmuxSession")
+      .mockResolvedValue(undefined);
+    const killSessionSpy = vi
+      .spyOn(runtime, "killTmuxSession")
+      .mockResolvedValue(undefined);
+    vi.spyOn(runtime, "splitTmuxPane").mockResolvedValue("%123");
+    vi.spyOn(runtime, "getSelectedTmuxSessionId").mockReturnValue(
+      "tmux-selected",
+    );
+    const zoomSpy = vi
+      .spyOn(runtime, "zoomTmuxPane")
+      .mockResolvedValue(undefined);
+    const killPaneSpy = vi
+      .spyOn(runtime, "killTmuxPane")
+      .mockResolvedValue(undefined);
+    vi.spyOn(runtime, "formatFileReference").mockReturnValue(fileReference);
+
+    expect(provider.getApiClient()).toBe(apiClient);
+    expect(provider.isHttpAvailable()).toBe(true);
+
+    provider.restart();
+    expect(restartSpy).toHaveBeenCalledTimes(1);
+
+    await provider.switchToInstance("workspace-wrapper", {
+      forceRestart: true,
+    });
+    expect(switchToInstanceSpy).toHaveBeenCalledWith("workspace-wrapper", {
+      forceRestart: true,
+    });
+
+    await provider.switchToTmuxSession("tmux-wrapper");
+    expect(switchToTmuxSpy).toHaveBeenCalledWith("tmux-wrapper");
+
+    expect(provider.resolveInstanceIdFromSessionId("repo-wrapper")).toBe(
+      "workspace-wrapper",
+    );
+
+    await provider.switchToNativeShell();
+    expect(switchToNativeSpy).toHaveBeenCalledTimes(1);
+
+    await expect(provider.createTmuxSession()).resolves.toBe("tmux-wrapper");
+    await provider.createTmuxWindow();
+    expect(createWindowSpy).toHaveBeenCalledTimes(1);
+
+    await provider.navigateTmuxWindow("next");
+    expect(navigateWindowSpy).toHaveBeenCalledWith("next");
+
+    await provider.navigateTmuxSession("prev");
+    expect(navigateSessionSpy).toHaveBeenCalledWith("prev");
+
+    await provider.killTmuxSession("tmux-wrapper");
+    expect(killSessionSpy).toHaveBeenCalledWith("tmux-wrapper");
+
+    await expect(provider.splitTmuxPane("v")).resolves.toBe("%123");
+    expect(provider.getSelectedTmuxSessionId()).toBe("tmux-selected");
+
+    await provider.zoomTmuxPane();
+    expect(zoomSpy).toHaveBeenCalledTimes(1);
+
+    await provider.killTmuxPane();
+    expect(killPaneSpy).toHaveBeenCalledTimes(1);
+
+    expect(provider.formatFileReference({ path: "src/example.ts" })).toBe(
+      fileReference,
+    );
+
+    const rawTmuxManager = {
+      executeRawCommand: vi.fn(async () => "raw-result"),
+    } as unknown as TmuxSessionManager;
+    const activeStore = new InstanceStore();
+    activeStore.upsert({
+      config: {
+        id: "workspace-raw",
+        workspaceUri: "file:///workspaces/raw",
+      },
+      runtime: { terminalKey: "workspace-raw", tmuxSessionId: "tmux-active" },
+      state: "connected",
+    });
+    activeStore.setActive("workspace-raw");
+    provider = createProvider({
+      instanceStore: activeStore,
+      tmuxSessionManager: rawTmuxManager,
+    });
+    vi.mocked(vscode.window.showInputBox).mockResolvedValueOnce(
+      "renamed-session",
+    );
+
+    await expect(
+      provider.executeRawTmuxCommand("rename-session"),
+    ).resolves.toBe("raw-result");
+    expect(rawTmuxManager.executeRawCommand).toHaveBeenCalledWith(
+      "tmux-active",
+      "rename-session",
+      ["renamed-session"],
+    );
+  });
+
+  it("formats URI references, posts clipboard content, and tracks terminal size", () => {
+    mockConfiguration();
+    provider = createProvider();
+    const formatSpy = vi
+      .spyOn(provider, "formatFileReference")
+      .mockReturnValue("@src/from-uri.ts");
+    const { view } = resolveProvider(provider);
+
+    expect(
+      provider.formatUriReference({
+        fsPath: "/workspaces/repo-a/src/from-uri.ts",
+        path: "/workspaces/repo-a/src/from-uri.ts",
+      } as any),
+    ).toBe("@src/from-uri.ts");
+    expect(formatSpy).toHaveBeenCalledWith({
+      path: "/workspaces/repo-a/src/from-uri.ts",
+    });
+
+    provider.pasteText("clipboard payload");
+    expect(view.webview.postMessage).toHaveBeenCalledWith({
+      type: "clipboardContent",
+      text: "clipboard payload",
+    });
+
+    provider.lastKnownCols = 132;
+    provider.lastKnownRows = 44;
+
+    expect(provider.lastKnownCols).toBe(132);
+    expect(provider.lastKnownRows).toBe(44);
   });
 });

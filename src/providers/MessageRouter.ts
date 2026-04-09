@@ -9,7 +9,14 @@ import { OpenCodeApiClient } from "../services/OpenCodeApiClient";
 import { OutputCaptureManager } from "../services/OutputCaptureManager";
 import { OutputChannelService } from "../services/OutputChannelService";
 import { TerminalManager } from "../terminals/TerminalManager";
-import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_SIZE, WebviewMessage } from "../types";
+import {
+  ALLOWED_IMAGE_TYPES,
+  MAX_IMAGE_SIZE,
+  TMUX_RAW_ALLOWED_SUBCOMMANDS,
+  TMUX_WEBVIEW_COMMAND_IDS,
+  WebviewMessage,
+} from "../types";
+import type { TmuxRawSubcommand, TmuxWebviewCommandId } from "../types";
 
 export interface MessageRouterProviderBridge {
   startOpenCode(): Promise<void>;
@@ -19,6 +26,8 @@ export interface MessageRouterProviderBridge {
   createTmuxWindow(): Promise<void>;
   navigateTmuxWindow(direction: "next" | "prev"): Promise<void>;
   navigateTmuxSession(direction: "next" | "prev"): Promise<void>;
+  toggleDashboard(): void;
+  restart(): void;
   switchToNativeShell(): Promise<void>;
   pasteText(text: string): void;
   getActiveInstanceId(): InstanceId;
@@ -37,11 +46,20 @@ export interface MessageRouterProviderBridge {
     sessionId: string,
     toolName: string,
     savePreference: boolean,
+    targetPaneId?: string,
   ): Promise<void>;
-  showAiToolSelector(sessionId: string, sessionName: string): Promise<void>;
-  splitTmuxPane(direction: "h" | "v"): Promise<void>;
+  showAiToolSelector(
+    sessionId: string,
+    sessionName: string,
+    forceShow?: boolean,
+    targetPaneId?: string,
+  ): Promise<void>;
+  executeRawTmuxCommand(subcommand: string, args?: string[]): Promise<string>;
+  splitTmuxPane(direction: "h" | "v"): Promise<string | undefined>;
+  zoomTmuxPane(): Promise<void>;
   killTmuxPane(): Promise<void>;
   getSelectedTmuxSessionId(): string | undefined;
+  isTmuxAvailable(): boolean;
 }
 
 export class MessageRouter {
@@ -56,7 +74,7 @@ export class MessageRouter {
     _instanceStore: InstanceStore | undefined,
   ) {}
 
-  public handleMessage(rawMessage: unknown): void {
+  public async handleMessage(rawMessage: unknown): Promise<void> {
     if (!rawMessage || typeof rawMessage !== "object") {
       return;
     }
@@ -136,16 +154,23 @@ export class MessageRouter {
         void this.provider.createTmuxSession();
         break;
       case "createTmuxWindow":
-        void this.provider.createTmuxWindow().then(() => {
-          const sessionId = this.provider.getSelectedTmuxSessionId();
-          if (sessionId) {
-            void this.provider.showAiToolSelector(sessionId, sessionId);
-          }
-        });
+        try {
+          await this.provider.createTmuxWindow();
+        } catch (error) {
+          this.logger.error(
+            `[MessageRouter] createTmuxWindow failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
         break;
       case "navigateTmuxWindow":
         if (message.direction === "next" || message.direction === "prev") {
-          void this.provider.navigateTmuxWindow(message.direction);
+          try {
+            await this.provider.navigateTmuxWindow(message.direction);
+          } catch (error) {
+            this.logger.error(
+              `[MessageRouter] navigateTmuxWindow failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
         }
         break;
       case "navigateTmuxSession":
@@ -161,20 +186,66 @@ export class MessageRouter {
           message.sessionId,
           message.tool,
           message.savePreference,
+          message.targetPaneId,
         );
         break;
       case "splitTmuxPane":
         if (message.direction === "h" || message.direction === "v") {
-          void this.provider.splitTmuxPane(message.direction).then(() => {
-            const sessionId = this.provider.getSelectedTmuxSessionId();
-            if (sessionId) {
-              void this.provider.showAiToolSelector(sessionId, sessionId);
-            }
-          });
+          try {
+            await this.provider.splitTmuxPane(message.direction);
+          } catch (error) {
+            this.logger.error(
+              `[MessageRouter] splitTmuxPane failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+        break;
+      case "zoomTmuxPane":
+        try {
+          await this.provider.zoomTmuxPane();
+        } catch (error) {
+          this.logger.error(
+            `[MessageRouter] zoomTmuxPane failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
         break;
       case "killTmuxPane":
-        void this.provider.killTmuxPane();
+        try {
+          await this.provider.killTmuxPane();
+        } catch (error) {
+          this.logger.error(
+            `[MessageRouter] killTmuxPane failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        break;
+      case "sendTmuxPromptChoice":
+        if (message.choice === "tmux") {
+          void this.provider.createTmuxSession();
+        } else if (message.choice === "shell") {
+          void this.provider.switchToNativeShell();
+        }
+        break;
+      case "requestAiToolSelector": {
+        const sessionId =
+          this.provider.getSelectedTmuxSessionId() ??
+          this.provider.getActiveInstanceId();
+        void this.provider.showAiToolSelector(sessionId, sessionId, true);
+        break;
+      }
+      case "executeTmuxCommand":
+        await this.handleExecuteTmuxCommand(message.commandId);
+        break;
+      case "executeTmuxRawCommand":
+        await this.handleExecuteTmuxRawCommand(
+          message.subcommand,
+          message.args,
+        );
+        break;
+      case "toggleDashboard":
+        this.provider.toggleDashboard();
+        break;
+      case "requestRestart":
+        this.provider.restart();
         break;
       default:
         break;
@@ -189,6 +260,63 @@ export class MessageRouter {
     this.terminalManager.writeToTerminal(
       this.provider.getActiveInstanceId(),
       data,
+    );
+  }
+
+  private async handleExecuteTmuxCommand(commandId: unknown): Promise<void> {
+    if (!this.isTmuxWebviewCommandId(commandId)) {
+      return;
+    }
+
+    try {
+      await vscode.commands.executeCommand(commandId);
+    } catch (error) {
+      this.logger.error(
+        `[MessageRouter] executeTmuxCommand failed for ${commandId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  private async handleExecuteTmuxRawCommand(
+    subcommand: unknown,
+    args: unknown,
+  ): Promise<void> {
+    if (!this.isTmuxRawSubcommand(subcommand)) {
+      return;
+    }
+
+    if (args !== undefined && !this.isStringArray(args)) {
+      return;
+    }
+
+    try {
+      await this.provider.executeRawTmuxCommand(subcommand, args);
+    } catch (error) {
+      this.logger.error(
+        `[MessageRouter] executeTmuxRawCommand failed for ${subcommand}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  private isTmuxWebviewCommandId(
+    value: unknown,
+  ): value is TmuxWebviewCommandId {
+    return (
+      typeof value === "string" &&
+      TMUX_WEBVIEW_COMMAND_IDS.some((commandId) => commandId === value)
+    );
+  }
+
+  private isTmuxRawSubcommand(value: unknown): value is TmuxRawSubcommand {
+    return (
+      typeof value === "string" &&
+      TMUX_RAW_ALLOWED_SUBCOMMANDS.some((command) => command === value)
+    );
+  }
+
+  private isStringArray(value: unknown): value is string[] {
+    return (
+      Array.isArray(value) && value.every((item) => typeof item === "string")
     );
   }
 
@@ -225,6 +353,7 @@ export class MessageRouter {
     this.provider.postWebviewMessage({
       type: "platformInfo",
       platform: process.platform,
+      tmuxAvailable: this.provider.isTmuxAvailable(),
     });
   }
 
@@ -553,7 +682,7 @@ export class MessageRouter {
     const entries: Array<{ name: string; cwd: string }> = [];
 
     for (const terminal of vscode.window.terminals) {
-      if (terminal.name === "OpenCode TUI") {
+      if (terminal.name === "Open Sidebar Terminal") {
         continue;
       }
 

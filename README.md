@@ -1,9 +1,12 @@
-# OpenCode Sidebar TUI
+# Open Sidebar TUI
 
 [![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/islee23520.opencode-sidebar-tui?logo=visual-studio-code&label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=islee23520.opencode-sidebar-tui)
 [![Open VSX](https://img.shields.io/open-vsx/v/islee23520/opencode-sidebar-tui?logo=open-vsx&label=Open%20VSX)](https://open-vsx.org/extension/islee23520/opencode-sidebar-tui)
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-pink?logo=githubsponsors)](https://github.com/sponsors/islee23520)
 
-Automatically render OpenCode TUI in VS Code sidebar with full terminal support.
+Automatically render Open Sidebar Terminal in VS Code sidebar with full terminal support.
+
+If this project helps your workflow, you can [support it on GitHub Sponsors](https://github.com/sponsors/islee23520).
 
 ## Features
 
@@ -52,7 +55,7 @@ The extension uses a hybrid communication approach:
 
 1. Open VS Code
 2. Go to Extensions (`Cmd+Shift+X` / `Ctrl+Shift+X`)
-3. Search for "OpenCode Sidebar TUI"
+3. Search for "Open Sidebar TUI"
 4. Click **Install**
 
 ### From OpenVSX Registry
@@ -60,7 +63,7 @@ The extension uses a hybrid communication approach:
 For VSCodium, Gitpod, Eclipse Theia, and other VS Code-compatible IDEs:
 
 1. Open your IDE's extension view
-2. Search for "OpenCode Sidebar TUI"
+2. Search for "Open Sidebar TUI"
 3. Click **Install**
 
 Or visit the [OpenVSX page](https://open-vsx.org/extension/islee23520/opencode-sidebar-tui).
@@ -102,16 +105,16 @@ npx @vscode/vsce package
 ## Usage
 
 1. Click the OpenCode icon in the Activity Bar (sidebar) to open Terminal Managers
-2. The OpenCode TUI terminal is available in the secondary sidebar
-3. OpenCode TUI automatically starts when the terminal view is activated
+2. The Open Sidebar Terminal terminal is available in the secondary sidebar
+3. Open Sidebar Terminal automatically starts when the terminal view is activated
 4. Interact with OpenCode directly in the sidebar
 
 ## Commands
 
 ### Basic Commands
 
-- **OpenCode TUI: Start OpenCode** - Manually start OpenCode
-- **OpenCode TUI: Paste** - Paste text into the terminal
+- **Open Sidebar Terminal: Start OpenCode** - Manually start OpenCode
+- **Open Sidebar Terminal: Paste** - Paste text into the terminal
 
 ### File Reference Commands
 
@@ -376,13 +379,23 @@ src/
 
 ## Implementation Details
 
-Based on the excellent [vscode-sidebar-terminal](https://github.com/s-hiraoku/vscode-sidebar-terminal) extension, streamlined specifically for OpenCode TUI:
+Based on the excellent [vscode-sidebar-terminal](https://github.com/s-hiraoku/vscode-sidebar-terminal) extension, streamlined specifically for Open Sidebar Terminal:
 
 - **Terminal Backend**: node-pty for PTY support
 - **Terminal Frontend**: xterm.js with WebGL rendering
 - **Process Management**: Automatic OpenCode lifecycle
 - **Communication**: HTTP API + WebView messaging
 - **Port Management**: Ephemeral port allocation (16384-65535)
+
+## Star History
+
+<a href="https://star-history.com/#islee23520/opencode-sidebar-tui&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=islee23520/opencode-sidebar-tui&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=islee23520/opencode-sidebar-tui&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=islee23520/opencode-sidebar-tui&type=Date" />
+ </picture>
+</a>
 
 ## License
 

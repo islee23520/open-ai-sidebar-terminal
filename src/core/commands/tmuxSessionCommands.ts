@@ -113,16 +113,12 @@ export function registerTmuxSessionCommands(
           return;
         }
 
-        const config = vscode.workspace.getConfiguration("opencodeTui");
-        const configuredCommand = config.get<string>("command", "opencode -c");
-
         const newId = `${Date.now()}`;
         const newRecord = {
           config: {
             id: newId,
             workspaceUri,
             label: `OpenCode (${vscode.workspace.name || "Workspace"})`,
-            command: configuredCommand,
           },
           runtime: {},
           state: "disconnected" as const,
@@ -194,16 +190,6 @@ export function registerTmuxSessionCommands(
       }
 
       await deps.provider.switchToNativeShell();
-    },
-  );
-
-  const openTerminalManagerCommand = vscode.commands.registerCommand(
-    "opencodeTui.openTerminalManager",
-    () => {
-      vscode.commands.executeCommand(
-        "workbench.view.focus",
-        "opencodeTui.terminalDashboard",
-      );
     },
   );
 
@@ -309,7 +295,6 @@ export function registerTmuxSessionCommands(
     killTmuxSessionCommand,
     killNativeShellCommand,
     switchNativeShellCommand,
-    openTerminalManagerCommand,
     browseTmuxSessionsCommand,
   ];
 }
