@@ -17,7 +17,11 @@ type DashboardHostMessage = HostMessage & Partial<DashboardPayload>;
 
 const vscode = acquireVsCodeApi();
 
-let lastPayload: DashboardPayload = { sessions: [], workspace: "" };
+let lastPayload: DashboardPayload = {
+  sessions: [],
+  workspace: "",
+  tmuxAvailable: true,
+};
 let aiTools: AiToolConfig[] = [];
 
 const aiCallbacks = {
@@ -58,6 +62,14 @@ function handleAction(action: DashboardAction): void {
   postAction(action);
 }
 
+function updateTmuxOnlyVisibility(tmuxAvailable: boolean): void {
+  const elements = document.querySelectorAll("[data-tmux-only]");
+  Array.from(elements).forEach((el) => {
+    if (el instanceof HTMLElement) {
+      el.style.display = tmuxAvailable ? "" : "none";
+    }
+  });
+}
 function renderDashboard(): void {
   const workspace = document.getElementById("workspace");
   const toggleScope = document.getElementById("toggle-scope");
@@ -128,7 +140,9 @@ window.addEventListener("message", (event) => {
       windows: message.windows,
       showingAll: message.showingAll,
       tools: Array.isArray(message.tools) ? message.tools : undefined,
+      tmuxAvailable: message.tmuxAvailable !== false,
     };
+    updateTmuxOnlyVisibility(lastPayload.tmuxAvailable !== false);
     renderDashboard();
   }
 
@@ -227,21 +241,30 @@ document.addEventListener("click", (event) => {
     if (TmuxCmd.isVisible()) {
       TmuxCmd.hide();
     } else {
-      const sessions = Array.isArray(lastPayload.sessions) ? lastPayload.sessions : [];
-      const activeSession = sessions.find(s => s.isActive);
-      TmuxCmd.show(activeSession?.id ?? null, aiCallbacks);
+      const sessions = Array.isArray(lastPayload.sessions)
+        ? lastPayload.sessions
+        : [];
+      const activeSession = sessions.find((s) => s.isActive);
+      TmuxCmd.show(activeSession?.id ?? null);
     }
     return;
   }
 
   // Tmux command dropdown item click
-  if (target.closest(".tmux-cmd-item") && !target.closest(".tmux-cmd-item.disabled")) {
+  if (
+    target.closest(".tmux-cmd-item") &&
+    !target.closest(".tmux-cmd-item.disabled")
+  ) {
     TmuxCmd.handleClick(target);
     return;
   }
 
   // Tmux command dropdown click-outside close
-  if (TmuxCmd.isVisible() && !target.closest("#tmux-command-dropdown") && !target.closest("#tmux-command-trigger")) {
+  if (
+    TmuxCmd.isVisible() &&
+    !target.closest("#tmux-command-dropdown") &&
+    !target.closest("#tmux-command-trigger")
+  ) {
     TmuxCmd.hide();
     return;
   }

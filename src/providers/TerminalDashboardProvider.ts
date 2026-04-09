@@ -130,9 +130,10 @@ export class TerminalDashboardProvider
       return;
     }
 
+    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
     try {
       const sessions = await this.tmuxSessionManager.discoverSessions();
-      const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       const workspaceName = workspacePath
         ? path.basename(workspacePath)
         : undefined;
@@ -212,6 +213,7 @@ export class TerminalDashboardProvider
         windows: windowsMap,
         showingAll: this.showAllSessions || undefined,
         tools,
+        tmuxAvailable: true,
       };
 
       const posted = await webview.postMessage(message);
@@ -228,8 +230,12 @@ export class TerminalDashboardProvider
       const fallbackMessage: TmuxDashboardHostMessage = {
         type: "updateTmuxSessions",
         sessions: [],
-        workspace: "Unavailable",
+        nativeShells: this.buildNativeShellDtos(
+          this.showAllSessions ? undefined : workspacePath,
+        ),
+        workspace: "No workspace",
         panes: {},
+        tmuxAvailable: false,
       };
 
       void webview.postMessage(fallbackMessage);

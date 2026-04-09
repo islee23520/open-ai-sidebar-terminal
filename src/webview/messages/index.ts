@@ -20,6 +20,9 @@ export interface MessageHandlerCallbacks {
   onShowTmuxPrompt: (
     message: Extract<HostMessage, { type: "showTmuxPrompt" }>,
   ) => void;
+  onPlatformInfo?: (
+    message: Extract<HostMessage, { type: "platformInfo" }>,
+  ) => void;
 }
 
 export interface MessageHandler {
@@ -87,6 +90,7 @@ export function createMessageHandler(
           break;
 
         case "platformInfo":
+          callbacks.onPlatformInfo?.(message);
           break;
 
         case "terminalConfig":

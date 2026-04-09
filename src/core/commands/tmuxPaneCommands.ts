@@ -14,6 +14,7 @@ type PaneQuickPickItem = {
 export interface TmuxPaneCommandDependencies {
   tmuxManager: TmuxSessionManager | undefined;
   resolveActiveTmuxSessionId: () => string | undefined;
+  resolveWorkspacePath: () => string | undefined;
   provider: TerminalProvider | undefined;
 }
 
@@ -151,7 +152,10 @@ export function registerTmuxPaneCommands(
         return;
       }
       try {
-        await deps.tmuxManager.splitPane(targetPaneId, "h");
+        const cwd = deps.resolveWorkspacePath();
+        await deps.tmuxManager.splitPane(targetPaneId, "h", {
+          workingDirectory: cwd,
+        });
       } catch {
         vscode.window.showErrorMessage("Failed to split pane");
       }
@@ -174,7 +178,10 @@ export function registerTmuxPaneCommands(
         return;
       }
       try {
-        await deps.tmuxManager.splitPane(targetPaneId, "v");
+        const cwd = deps.resolveWorkspacePath();
+        await deps.tmuxManager.splitPane(targetPaneId, "v", {
+          workingDirectory: cwd,
+        });
       } catch {
         vscode.window.showErrorMessage("Failed to split pane");
       }
@@ -206,6 +213,7 @@ export function registerTmuxPaneCommands(
       try {
         await deps.tmuxManager.splitPane(targetPaneId, "v", {
           command,
+          workingDirectory: deps.resolveWorkspacePath(),
         });
       } catch {
         vscode.window.showErrorMessage("Failed to split pane");
@@ -440,7 +448,7 @@ export function registerTmuxPaneCommands(
       const sessionId = deps.resolveActiveTmuxSessionId();
       if (!sessionId) return;
       try {
-        await deps.tmuxManager.createWindow(sessionId);
+        await deps.tmuxManager.createWindow(sessionId, deps.resolveWorkspacePath());
       } catch {
         vscode.window.showErrorMessage("Failed to create window");
       }

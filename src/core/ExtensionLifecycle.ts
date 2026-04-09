@@ -279,6 +279,8 @@ export class ExtensionLifecycle {
       sendPrompt: (prompt: string) =>
         this.tuiProvider?.sendPrompt(prompt) ?? Promise.resolve(),
       resolveActiveTmuxSessionId: () => this.resolveActiveTmuxSessionId(),
+      resolveWorkspacePath: () =>
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? undefined,
     };
   }
 

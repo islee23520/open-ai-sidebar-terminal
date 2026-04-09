@@ -1,22 +1,30 @@
+import type { WebviewMessage } from "../types";
+import { postMessage } from "./shared/vscode-api";
 import { escapeHtml } from "./dashboard/utils";
 
-export interface DropdownCallbacks {
-  postMessage: (message: unknown) => void;
-}
+type TmuxDropdownMessage = Extract<
+  WebviewMessage,
+  {
+    type:
+      | "executeTmuxCommand"
+      | "executeTmuxRawCommand"
+      | "requestAiToolSelector"
+      | "zoomTmuxPane";
+  }
+>;
 
 interface TmuxCommand {
   id: string;
   label: string;
   category: string;
   requiresSession: boolean;
-  buildMessage: (activeSessionId: string | null) => Record<string, unknown>;
+  buildMessage: (activeSessionId: string | null) => TmuxDropdownMessage;
 }
 
 let visible = false;
 let query = "";
 let focusedIndex = 0;
 let activeSessionId: string | null = null;
-let callbacks: DropdownCallbacks | null = null;
 
 const commands: TmuxCommand[] = [
   {
@@ -100,6 +108,15 @@ const commands: TmuxCommand[] = [
     }),
   },
   {
+    id: "select-ai-tool",
+    label: "Select AI Tool",
+    category: "Utility",
+    requiresSession: false,
+    buildMessage: () => ({
+      type: "requestAiToolSelector",
+    }),
+  },
+  {
     id: "switch-pane",
     label: "Switch Pane",
     category: "Pane",
@@ -177,6 +194,15 @@ const commands: TmuxCommand[] = [
     buildMessage: () => ({
       type: "executeTmuxCommand",
       commandId: "opencodeTui.tmuxKillPane",
+    }),
+  },
+  {
+    id: "zoom-pane",
+    label: "Zoom Pane",
+    category: "Pane",
+    requiresSession: true,
+    buildMessage: () => ({
+      type: "zoomTmuxPane",
     }),
   },
   {
@@ -366,9 +392,8 @@ function renderList(): void {
     .join("");
 }
 
-export function show(sessionId: string | null, cb: DropdownCallbacks): void {
+export function show(sessionId: string | null): void {
   activeSessionId = sessionId;
-  callbacks = cb;
   visible = true;
   query = "";
   focusedIndex = 0;
@@ -402,7 +427,6 @@ export function show(sessionId: string | null, cb: DropdownCallbacks): void {
 export function hide(): void {
   visible = false;
   activeSessionId = null;
-  callbacks = null;
 
   const dropdown = document.getElementById("tmux-command-dropdown");
   if (dropdown) {
@@ -428,15 +452,13 @@ export function updateFocus(): void {
 }
 
 function selectCommand(index: number): void {
-  if (!callbacks) return;
-
   const filtered = getFilteredCommands();
   const cmd = filtered[index];
   if (!cmd) return;
 
   if (cmd.requiresSession && !activeSessionId) return;
 
-  callbacks.postMessage(cmd.buildMessage(activeSessionId));
+  postMessage(cmd.buildMessage(activeSessionId));
   hide();
 }
 

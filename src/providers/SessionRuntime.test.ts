@@ -527,6 +527,38 @@ describe("SessionRuntime - Workspace Session Resolution", () => {
       expect(mockTmuxSessionManager.ensureSession).toHaveBeenCalled();
     });
 
+    it("should use the workspace path instead of the active pane cwd", async () => {
+      vi.mocked(mockTmuxSessionManager.ensureSession).mockResolvedValue({
+        action: "attached" as const,
+        session: {
+          id: "project-a-session",
+          name: "project-a",
+          workspace: "/workspace/project-a",
+          isActive: true,
+        },
+      });
+
+      vi.mocked(mockTmuxSessionManager.listPanes).mockResolvedValue([
+        {
+          paneId: "%1",
+          isActive: true,
+          currentPath: "/",
+        },
+      ] as unknown as Awaited<ReturnType<TmuxSessionManager["listPanes"]>>);
+
+      vi.mocked(mockTmuxSessionManager.splitPane).mockResolvedValue("%2");
+
+      await (
+        sessionRuntime as unknown as {
+          splitTmuxPane: (direction: "h" | "v") => Promise<string | undefined>;
+        }
+      ).splitTmuxPane("v");
+
+      expect(mockTmuxSessionManager.splitPane).toHaveBeenCalledWith("%1", "v", {
+        workingDirectory: "/workspace/project-a",
+      });
+    });
+
     it("should return undefined when no workspace path is available", async () => {
       // Setup: Remove workspace folders
       vscode.workspace.workspaceFolders = undefined;
@@ -594,7 +626,19 @@ describe("SessionRuntime - Workspace Session Resolution", () => {
 
   describe("killTmuxPane", () => {
     it("kills only the active pane when multiple panes exist", async () => {
-      upsertInstance({ tmuxSessionId: "workspace-session" });
+      upsertInstance({
+        tmuxSessionId: "workspace-session",
+        workspaceUri: "file:///workspace/project-a",
+      });
+      vi.mocked(mockTmuxSessionManager.ensureSession).mockResolvedValue({
+        action: "attached" as const,
+        session: {
+          id: "workspace-session",
+          name: "project-a",
+          workspace: "/workspace/project-a",
+          isActive: true,
+        },
+      });
 
       vi.mocked(mockTmuxSessionManager.listPanes).mockResolvedValue([
         { paneId: "%1", isActive: false },
@@ -609,7 +653,19 @@ describe("SessionRuntime - Workspace Session Resolution", () => {
     });
 
     it("kills the active window then pane when only one pane remains in a multi-window session", async () => {
-      upsertInstance({ tmuxSessionId: "workspace-session" });
+      upsertInstance({
+        tmuxSessionId: "workspace-session",
+        workspaceUri: "file:///workspace/project-a",
+      });
+      vi.mocked(mockTmuxSessionManager.ensureSession).mockResolvedValue({
+        action: "attached" as const,
+        session: {
+          id: "workspace-session",
+          name: "project-a",
+          workspace: "/workspace/project-a",
+          isActive: true,
+        },
+      });
 
       vi.mocked(mockTmuxSessionManager.listPanes).mockResolvedValue([
         { paneId: "%9", isActive: true },
@@ -1198,7 +1254,19 @@ describe("SessionRuntime - Workspace Session Resolution", () => {
     });
 
     it("navigates tmux windows and zooms the active pane", async () => {
-      upsertInstance({ tmuxSessionId: "workspace-session" });
+      upsertInstance({
+        tmuxSessionId: "workspace-session",
+        workspaceUri: "file:///workspace/project-a",
+      });
+      vi.mocked(mockTmuxSessionManager.ensureSession).mockResolvedValue({
+        action: "attached" as const,
+        session: {
+          id: "workspace-session",
+          name: "project-a",
+          workspace: "/workspace/project-a",
+          isActive: true,
+        },
+      });
       vi.mocked(mockTmuxSessionManager.listPanes).mockResolvedValue([
         { paneId: "%1", isActive: false },
         { paneId: "%2", isActive: true },
@@ -1302,7 +1370,19 @@ describe("SessionRuntime - Workspace Session Resolution", () => {
 
   describe("pane routing and formatting helpers", () => {
     it("routes dropped text into the pane under the drop coordinates", async () => {
-      upsertInstance({ tmuxSessionId: "workspace-session" });
+      upsertInstance({
+        tmuxSessionId: "workspace-session",
+        workspaceUri: "file:///workspace/project-a",
+      });
+      vi.mocked(mockTmuxSessionManager.ensureSession).mockResolvedValue({
+        action: "attached" as const,
+        session: {
+          id: "workspace-session",
+          name: "project-a",
+          workspace: "/workspace/project-a",
+          isActive: true,
+        },
+      });
       vi.mocked(
         mockTmuxSessionManager.listVisiblePaneGeometry,
       ).mockResolvedValue([

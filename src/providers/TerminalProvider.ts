@@ -106,6 +106,7 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
       zoomTmuxPane: () => this.zoomTmuxPane(),
       killTmuxPane: () => this.killTmuxPane(),
       getSelectedTmuxSessionId: () => this.getSelectedTmuxSessionId(),
+      isTmuxAvailable: () => !!this.tmuxSessionManager,
     };
 
     this.messageRouter = new MessageRouter(

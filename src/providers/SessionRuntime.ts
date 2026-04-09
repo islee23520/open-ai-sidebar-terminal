@@ -266,10 +266,7 @@ export class SessionRuntime {
       let resolvedTool: AiToolConfig | undefined;
       let command: string | undefined;
 
-      if (
-        !forceNativeShell &&
-        (tmuxSessionId || this.pendingLaunchToolName)
-      ) {
+      if (!forceNativeShell && (tmuxSessionId || this.pendingLaunchToolName)) {
         resolvedTool = await this.resolveToolForStartup(config);
         if (!resolvedTool) {
           this.isStarting = false;
@@ -820,13 +817,14 @@ export class SessionRuntime {
     if (!this.tmuxSessionManager) {
       return;
     }
-    const sessionId =
-      this.selectedTmuxSessionId ??
-      this.resolveTmuxSessionIdForInstance(this.activeInstanceId) ??
-      (await this.resolveFallbackTmuxSessionId());
+    // Always use current workspace session for toolbar actions
+    const workspacePath = this.resolveWorkspacePathForTmuxFallback();
+    const sessionId = workspacePath
+      ? await this.ensureWorkspaceSession(workspacePath)
+      : undefined;
     if (!sessionId) {
       this.logger.warn(
-        `[TerminalProvider] Cannot navigate tmux window: no tmux session resolved (selected=${this.selectedTmuxSessionId}, instance=${this.activeInstanceId})`,
+        `[TerminalProvider] Cannot navigate tmux window: no workspace session available (instance=${this.activeInstanceId})`,
       );
       return;
     }
@@ -866,14 +864,13 @@ export class SessionRuntime {
         activeWindowOnly: true,
       });
       const activePane = panes.find((p) => p.isActive) ?? panes[0];
+      const workingDirectory = this.resolveWorkspacePathForTmuxFallback();
       if (activePane) {
         return await this.tmuxSessionManager.splitPane(
           activePane.paneId,
           direction,
           {
-            workingDirectory:
-              activePane.currentPath ??
-              this.resolveWorkspacePathForTmuxFallback(),
+            workingDirectory,
           },
         );
       }
@@ -890,13 +887,14 @@ export class SessionRuntime {
     if (!this.tmuxSessionManager) {
       return;
     }
-    const sessionId =
-      this.selectedTmuxSessionId ??
-      this.resolveTmuxSessionIdForInstance(this.activeInstanceId) ??
-      (await this.resolveFallbackTmuxSessionId());
+    // Always use current workspace session for toolbar actions
+    const workspacePath = this.resolveWorkspacePathForTmuxFallback();
+    const sessionId = workspacePath
+      ? await this.ensureWorkspaceSession(workspacePath)
+      : undefined;
     if (!sessionId) {
       this.logger.warn(
-        `[TerminalProvider] Cannot zoom tmux pane: no tmux session resolved (selected=${this.selectedTmuxSessionId}, instance=${this.activeInstanceId})`,
+        `[TerminalProvider] Cannot zoom tmux pane: no workspace session available (instance=${this.activeInstanceId})`,
       );
       return;
     }
@@ -917,13 +915,14 @@ export class SessionRuntime {
     if (!this.tmuxSessionManager) {
       return;
     }
-    const sessionId =
-      this.selectedTmuxSessionId ??
-      this.resolveTmuxSessionIdForInstance(this.activeInstanceId) ??
-      (await this.resolveFallbackTmuxSessionId());
+    // Always use current workspace session for toolbar actions
+    const workspacePath = this.resolveWorkspacePathForTmuxFallback();
+    const sessionId = workspacePath
+      ? await this.ensureWorkspaceSession(workspacePath)
+      : undefined;
     if (!sessionId) {
       this.logger.warn(
-        `[TerminalProvider] Cannot kill tmux pane: no tmux session resolved (selected=${this.selectedTmuxSessionId}, instance=${this.activeInstanceId})`,
+        `[TerminalProvider] Cannot kill tmux pane: no workspace session available (instance=${this.activeInstanceId})`,
       );
       return;
     }
@@ -1048,10 +1047,11 @@ export class SessionRuntime {
     if (!this.tmuxSessionManager) {
       return false;
     }
-    const sessionId =
-      this.selectedTmuxSessionId ??
-      this.resolveTmuxSessionIdForInstance(this.activeInstanceId) ??
-      (await this.resolveFallbackTmuxSessionId());
+    // Always use current workspace session for toolbar actions
+    const workspacePath = this.resolveWorkspacePathForTmuxFallback();
+    const sessionId = workspacePath
+      ? await this.ensureWorkspaceSession(workspacePath)
+      : undefined;
     if (!sessionId) {
       return false;
     }
@@ -1330,7 +1330,11 @@ export class SessionRuntime {
 
       const canKillPane = panes.length > 1 || windows.length > 1;
 
-      if (windowChanged || paneHasAiTool !== this._lastPaneHasAiTool || canKillPane !== this._lastCanKillPane) {
+      if (
+        windowChanged ||
+        paneHasAiTool !== this._lastPaneHasAiTool ||
+        canKillPane !== this._lastCanKillPane
+      ) {
         if (windowChanged) {
           this.knownActiveWindowId = activeWindow.windowId;
         }

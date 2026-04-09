@@ -97,6 +97,7 @@ describe("MessageRouter", () => {
       zoomTmuxPane: vi.fn(async () => undefined),
       killTmuxPane: vi.fn(async () => undefined),
       getSelectedTmuxSessionId: vi.fn(() => "tmux-selected"),
+      isTmuxAvailable: vi.fn(() => true),
     };
   }
 
@@ -214,8 +215,9 @@ describe("MessageRouter", () => {
     expect(provider.postWebviewMessage).toHaveBeenCalledWith({
       type: "platformInfo",
       platform: process.platform,
-    });
+      tmuxAvailable: true,
   });
+});
 
   it("routes handleMessage cases for provider bridge actions and clipboard operations", async () => {
     vi.mocked(vscode.env.clipboard.readText).mockResolvedValue(
@@ -625,8 +627,9 @@ describe("MessageRouter", () => {
     expect(provider.postWebviewMessage).toHaveBeenCalledWith({
       type: "platformInfo",
       platform: process.platform,
-    });
+      tmuxAvailable: true,
   });
+});
 
   it("logs bridge errors for tmux actions and ignores invalid directions", async () => {
     provider.createTmuxWindow = vi.fn(async () => {

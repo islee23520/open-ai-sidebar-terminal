@@ -142,9 +142,9 @@ function createHarness(options?: {
   const deps: TmuxPaneCommandDependencies = {
     tmuxManager,
     resolveActiveTmuxSessionId,
+    resolveWorkspacePath: vi.fn(() => "/test/workspace"),
     provider,
   };
-
   registerTmuxPaneCommands(deps);
 
   const handlers = new Map(
@@ -282,11 +282,16 @@ describe("registerTmuxPaneCommands", () => {
     await horizontal({ paneId: "%2", sessionId: "session-2" });
     await horizontal({ sessionId: "session-2" });
 
-    expect(horizontalHarness.splitPane).toHaveBeenNthCalledWith(1, "%2", "h");
+    expect(horizontalHarness.splitPane).toHaveBeenNthCalledWith(1, "%2", "h", {
+      workingDirectory: "/test/workspace",
+    });
     expect(horizontalHarness.splitPane).toHaveBeenNthCalledWith(
       2,
       "%1",
       "h",
+      {
+        workingDirectory: "/test/workspace",
+      },
     );
 
     const noSessionHarness = createHarness({ sessionId: undefined });
@@ -303,7 +308,9 @@ describe("registerTmuxPaneCommands", () => {
       sessionId: "session-3",
     });
 
-    expect(verticalHarness.splitPane).toHaveBeenCalledWith("%1", "v");
+    expect(verticalHarness.splitPane).toHaveBeenCalledWith("%1", "v", {
+      workingDirectory: "/test/workspace",
+    });
     expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
       "Failed to split pane",
     );
@@ -321,6 +328,7 @@ describe("registerTmuxPaneCommands", () => {
     await handler({ paneId: "%1", sessionId: "session-1" });
     expect(harness.splitPane).toHaveBeenCalledWith("%1", "v", {
       command: "htop",
+      workingDirectory: "/test/workspace",
     });
 
     harness.splitPane.mockRejectedValueOnce(new Error("boom"));
@@ -491,7 +499,11 @@ describe("registerTmuxPaneCommands", () => {
       const handler = getHandler(harness, commandId);
 
       await handler();
-      expect(harness[methodName]).toHaveBeenCalledWith("session-1");
+      if (methodName === "createWindow") {
+        expect(harness[methodName]).toHaveBeenCalledWith("session-1", "/test/workspace");
+      } else {
+        expect(harness[methodName]).toHaveBeenCalledWith("session-1");
+      }
 
       harness[methodName].mockRejectedValueOnce(new Error("boom"));
       await handler();

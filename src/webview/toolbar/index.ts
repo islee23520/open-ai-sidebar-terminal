@@ -1,18 +1,16 @@
 import { postMessage } from "../shared/vscode-api";
 
 import * as TmuxCmd from "../tmux-command-dropdown";
-import type { DropdownCallbacks } from "../tmux-command-dropdown";
 
 export function setupTmuxCommandButton(
   getSessionId: () => string | null,
-  callbacks: DropdownCallbacks,
 ): void {
   const btnTmuxCommands = document.getElementById("btn-tmux-commands");
   btnTmuxCommands?.addEventListener("click", () => {
     if (TmuxCmd.isVisible()) {
       TmuxCmd.hide();
     } else {
-      TmuxCmd.show(getSessionId(), callbacks);
+      TmuxCmd.show(getSessionId());
     }
   });
 }

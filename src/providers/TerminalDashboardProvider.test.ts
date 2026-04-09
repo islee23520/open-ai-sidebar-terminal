@@ -616,10 +616,12 @@ describe("TerminalDashboardProvider", () => {
     expect(view.webview.postMessage).toHaveBeenCalledWith({
       type: "updateTmuxSessions",
       sessions: [],
-      workspace: "Unavailable",
+      nativeShells: [],
+      workspace: "No workspace",
       panes: {},
-    });
+      tmuxAvailable: false,
   });
+});
 
   it("refreshes when pane changes are emitted by tmux", async () => {
     const { provider, discoverSessions, onPaneChangedEvent } = createProvider({

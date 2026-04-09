@@ -56,120 +56,6 @@
         </div>
         <button
           type="button"
-          id="btn-split-v"
-          class="pane-btn"
-          aria-label="Split pane vertically"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 14 14"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            aria-hidden="true"
-          >
-            <rect
-              x="1"
-              y="1"
-              width="12"
-              height="5"
-              rx="1"
-              stroke="currentColor"
-              stroke-width="1.2"
-            />
-            <rect
-              x="1"
-              y="8"
-              width="12"
-              height="5"
-              rx="1"
-              stroke="currentColor"
-              stroke-width="1.2"
-            />
-          </svg>
-        </button>
-        <button
-          type="button"
-          id="btn-split-h"
-          class="pane-btn"
-          aria-label="Split pane horizontally"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 14 14"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            aria-hidden="true"
-          >
-            <rect
-              x="1"
-              y="1"
-              width="5"
-              height="12"
-              rx="1"
-              stroke="currentColor"
-              stroke-width="1.2"
-            />
-            <rect
-              x="8"
-              y="1"
-              width="5"
-              height="12"
-              rx="1"
-              stroke="currentColor"
-              stroke-width="1.2"
-            />
-          </svg>
-        </button>
-        <button
-          type="button"
-          id="btn-new-window"
-          class="pane-btn"
-          aria-label="New tmux window"
-        >
-          +
-        </button>
-        <button
-          type="button"
-          id="btn-next-window"
-          class="pane-btn"
-          aria-label="Next tmux window"
-        >
-          &#9658;
-        </button>
-        <button
-          type="button"
-          id="btn-zoom-pane"
-          class="pane-btn"
-          aria-label="Zoom pane"
-        >
-          ⤢
-        </button>
-        <button
-          type="button"
-          id="btn-ai-tool"
-          class="pane-btn"
-          aria-label="Select AI Tool"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 14 14"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            aria-hidden="true"
-          >
-            <path
-              d="M7 1L8.5 5.5H13L9.5 8.5L11 13L7 10L3 13L4.5 8.5L1 5.5H5.5L7 1Z"
-              stroke="currentColor"
-              stroke-width="1.2"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </button>
-        <button
-          type="button"
           id="btn-kill-pane"
           class="pane-btn pane-btn--danger"
           aria-label="Close pane"
@@ -243,6 +129,7 @@
             type="button"
             id="dashboard-new-tmux"
             class="dashboard-btn primary"
+            data-tmux-only
           >
             New tmux
           </button>
@@ -312,6 +199,7 @@
             type="button"
             id="tmux-prompt-tmux"
             class="ai-selector-option"
+            data-tmux-only
           >
             <div class="ai-option-icon">🗔</div>
             <div class="ai-option-details">

@@ -340,6 +340,7 @@ export type TmuxDashboardHostMessage =
       panes?: Record<string, TmuxDashboardPaneDto[]>;
       showingAll?: boolean;
       tools?: AiToolConfig[];
+      tmuxAvailable?: boolean;
     }
   | {
       type: "showAiToolSelector";
@@ -380,7 +381,7 @@ export type HostMessage =
   | { type: "clearTerminal" }
   | { type: "focusTerminal" }
   | { type: "webviewVisible" }
-  | { type: "platformInfo"; platform: string }
+  | { type: "platformInfo"; platform: string; tmuxAvailable?: boolean }
   | {
       type: "terminalConfig";
       fontSize: number;
@@ -417,6 +418,7 @@ export type HostMessage =
   | {
       type: "showTmuxPrompt";
       workspaceName: string;
+      tmuxAvailable?: boolean;
     };
 
 export type LogLevel = "debug" | "info" | "warn" | "error";

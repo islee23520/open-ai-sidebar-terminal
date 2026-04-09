@@ -41,6 +41,7 @@ export interface DashboardPayload {
   windows?: Record<string, TmuxDashboardWindowDto[]>;
   showingAll?: boolean;
   tools?: AiToolConfig[];
+  tmuxAvailable?: boolean;
 }
 
 export interface NativeShellDto {
@@ -53,10 +54,12 @@ export interface NativeShellDto {
 export interface HostMessage {
   type: string;
   sessions?: TmuxDashboardSessionDto[];
+  nativeShells?: NativeShellDto[];
   workspace?: string;
   windows?: Record<string, TmuxDashboardWindowDto[]>;
   showingAll?: boolean;
   tools?: AiToolConfig[];
+  tmuxAvailable?: boolean;
   sessionId?: string;
   sessionName?: string;
   defaultTool?: string;

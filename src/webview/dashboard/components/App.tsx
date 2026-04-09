@@ -28,7 +28,7 @@ export const App: FunctionComponent<AppProps> = ({
   };
 
   if (sessions.length === 0 && nativeShells.length === 0) {
-    return h(EmptyState, null);
+    return h(EmptyState, { tmuxAvailable: payload.tmuxAvailable });
   }
 
   return h(

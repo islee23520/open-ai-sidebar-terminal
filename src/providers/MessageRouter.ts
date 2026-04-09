@@ -59,6 +59,7 @@ export interface MessageRouterProviderBridge {
   zoomTmuxPane(): Promise<void>;
   killTmuxPane(): Promise<void>;
   getSelectedTmuxSessionId(): string | undefined;
+  isTmuxAvailable(): boolean;
 }
 
 export class MessageRouter {
@@ -352,6 +353,7 @@ export class MessageRouter {
     this.provider.postWebviewMessage({
       type: "platformInfo",
       platform: process.platform,
+      tmuxAvailable: this.provider.isTmuxAvailable(),
     });
   }
 

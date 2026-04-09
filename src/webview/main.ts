@@ -22,6 +22,15 @@ import {
 const dashboard = createDashboardRenderer();
 
 let currentSessionId: string | null = null;
+let tmuxAvailable = true;
+function updateTmuxOnlyElements(available: boolean): void {
+  const elements = document.querySelectorAll("[data-tmux-only]");
+  Array.from(elements).forEach((el) => {
+    if (el instanceof HTMLElement) {
+      el.style.display = available ? "" : "none";
+    }
+  });
+}
 
 const callbacks: MessageHandlerCallbacks = {
   onActiveSession(message) {
@@ -80,7 +89,17 @@ const callbacks: MessageHandlerCallbacks = {
   },
 
   onShowTmuxPrompt(message) {
-    TmuxPrompt.show(message.workspaceName);
+    if (message.tmuxAvailable === false) {
+      // tmux not installed — auto-select shell
+      postMessage({ type: "sendTmuxPromptChoice", choice: "shell" });
+    } else {
+      TmuxPrompt.show(message.workspaceName);
+    }
+  },
+
+  onPlatformInfo(message) {
+    tmuxAvailable = message.tmuxAvailable !== false;
+    updateTmuxOnlyElements(tmuxAvailable);
   },
 };
 
@@ -108,9 +127,7 @@ function initApp(): void {
   setupPaneControls();
   setupAiToolButton();
   setupReloadButton();
-  setupTmuxCommandButton(() => currentSessionId, {
-    postMessage: (message) => postMessage(message as never),
-  });
+  setupTmuxCommandButton(() => currentSessionId);
   setupDashboardEventListeners(() => dashboard.toggle());
 
   window.addEventListener("message", (event: MessageEvent) => {
