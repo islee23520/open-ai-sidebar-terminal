@@ -140,6 +140,12 @@
         "icon": "$(dashboard)"
       },
       {
+        "command": "opencodeTui.toggleTmuxCommandToolbar",
+        "title": "Toggle Tmux Command Toolbar",
+        "category": "Open Sidebar Terminal",
+        "icon": "$(list-tree)"
+      },
+      {
         "command": "opencodeTui.openDashboardInEditor",
         "title": "Open Dashboard in Editor",
         "category": "Open Sidebar Terminal",
@@ -307,6 +313,12 @@
         "key": "ctrl+alt+d",
         "mac": "cmd+alt+d",
         "when": "focusedView == 'opencodeTui'"
+      },
+      {
+        "command": "opencodeTui.toggleTmuxCommandToolbar",
+        "key": "ctrl+alt+m",
+        "mac": "cmd+alt+m",
+        "when": "focusedView == 'opencodeTui' && opencodeTui.tmuxAttached"
       }
     ],
     "configuration": {

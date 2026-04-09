@@ -68,6 +68,18 @@ const callbacks: MessageHandlerCallbacks = {
     }
   },
 
+  onToggleTmuxCommandToolbar() {
+    if (!currentSessionId) {
+      return;
+    }
+
+    if (TmuxCmd.isVisible()) {
+      TmuxCmd.hide();
+    } else {
+      TmuxCmd.show(currentSessionId);
+    }
+  },
+
   onShowAiToolSelector(message) {
     AiSelector.show(
       message.sessionId,

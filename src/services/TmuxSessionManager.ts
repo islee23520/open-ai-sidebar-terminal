@@ -970,6 +970,23 @@ export class TmuxSessionManager {
    * @param paneId The pane ID to capture
    * @returns The captured pane content as a string
    */
+  public async getActiveFocus(): Promise<
+    { sessionId: string; windowId: string; paneId: string } | undefined
+  > {
+    try {
+      const stdout = await this.runTmux([
+        "display-message",
+        "-p",
+        "#{session_id}\t#{window_id}\t#{pane_id}",
+      ]);
+      const [sessionId, windowId, paneId] = stdout.trim().split("\t");
+      if (!sessionId || !windowId || !paneId) return undefined;
+      return { sessionId, windowId, paneId };
+    } catch {
+      return undefined;
+    }
+  }
+
   public async capturePane(paneId: string): Promise<string> {
     try {
       const stdout = await this.runTmux(["capture-pane", "-t", paneId, "-p"]);

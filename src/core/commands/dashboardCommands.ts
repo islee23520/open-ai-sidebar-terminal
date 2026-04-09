@@ -24,6 +24,15 @@ export function registerDashboardCommands(
   );
 
   disposables.push(
+    vscode.commands.registerCommand(
+      "opencodeTui.toggleTmuxCommandToolbar",
+      () => {
+        deps.provider?.toggleTmuxCommandToolbar();
+      },
+    ),
+  );
+
+  disposables.push(
     vscode.commands.registerCommand("opencodeTui.openDashboardInEditor", () => {
       void openDashboardInEditor(deps);
     }),

@@ -1362,6 +1362,36 @@ describe("TerminalProvider", () => {
     );
   });
 
+  it("posts a webview message when toggling the tmux command toolbar", () => {
+    mockConfiguration();
+    provider = createProvider();
+    const runtime = (provider as any).sessionRuntime;
+    vi.spyOn(runtime, "getSelectedTmuxSessionId").mockReturnValue(
+      "tmux-selected",
+    );
+    const { view } = resolveProvider(provider);
+
+    provider.toggleTmuxCommandToolbar();
+
+    expect(view.webview.postMessage).toHaveBeenCalledWith({
+      type: "toggleTmuxCommandToolbar",
+    });
+  });
+
+  it("does not post a webview message when no tmux session is attached", () => {
+    mockConfiguration();
+    provider = createProvider();
+    const runtime = (provider as any).sessionRuntime;
+    vi.spyOn(runtime, "getSelectedTmuxSessionId").mockReturnValue(undefined);
+    const { view } = resolveProvider(provider);
+
+    provider.toggleTmuxCommandToolbar();
+
+    expect(view.webview.postMessage).not.toHaveBeenCalledWith({
+      type: "toggleTmuxCommandToolbar",
+    });
+  });
+
   it("delegates public runtime wrapper methods to SessionRuntime", async () => {
     mockConfiguration();
     provider = createProvider();

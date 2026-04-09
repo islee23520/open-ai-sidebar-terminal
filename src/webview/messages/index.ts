@@ -14,6 +14,9 @@ export interface MessageHandlerCallbacks {
   onToggleDashboard: (
     message: Extract<HostMessage, { type: "toggleDashboard" }>,
   ) => void;
+  onToggleTmuxCommandToolbar: (
+    message: Extract<HostMessage, { type: "toggleTmuxCommandToolbar" }>,
+  ) => void;
   onUpdateDashboard: (
     message: Extract<HostMessage, { type: "updateDashboard" }>,
   ) => void;
@@ -122,6 +125,10 @@ export function createMessageHandler(
 
         case "toggleDashboard":
           callbacks.onToggleDashboard(message);
+          break;
+
+        case "toggleTmuxCommandToolbar":
+          callbacks.onToggleTmuxCommandToolbar(message);
           break;
 
         case "updateDashboard":

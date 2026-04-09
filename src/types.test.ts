@@ -137,6 +137,14 @@ describe("Types", () => {
       expect(message.args).toEqual(["workspace-renamed"]);
       expect(TMUX_RAW_ALLOWED_SUBCOMMANDS).toContain("choose-tree");
     });
+
+    it("should accept tmux command toolbar host messages", () => {
+      const message: HostMessage = {
+        type: "toggleTmuxCommandToolbar",
+      };
+
+      expect(message.type).toBe("toggleTmuxCommandToolbar");
+    });
   });
 
   describe("Tmux dashboard messages", () => {

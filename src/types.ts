@@ -415,6 +415,7 @@ export type HostMessage =
       showingAll?: boolean;
     }
   | { type: "toggleDashboard"; visible: boolean }
+  | { type: "toggleTmuxCommandToolbar" }
   | {
       type: "showTmuxPrompt";
       workspaceName: string;

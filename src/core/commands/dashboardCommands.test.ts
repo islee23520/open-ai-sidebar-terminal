@@ -23,7 +23,10 @@ vi.mock("vscode", async () => {
 
 type CommandCallback = (...args: unknown[]) => unknown;
 
-type ProviderMock = Pick<TerminalProvider, "toggleDashboard">;
+type ProviderMock = Pick<
+  TerminalProvider,
+  "toggleDashboard" | "toggleTmuxCommandToolbar"
+>;
 
 type TmuxManagerMock = Pick<TmuxSessionManager, "discoverSessions">;
 
@@ -101,6 +104,7 @@ const dashboardInternals = loadDashboardInternals();
 function createProviderMock(): ProviderMock {
   return {
     toggleDashboard: vi.fn(),
+    toggleTmuxCommandToolbar: vi.fn(),
   };
 }
 
@@ -203,16 +207,19 @@ describe("dashboardCommands", () => {
     vscode.workspace.workspaceFolders = undefined;
   });
 
-  it("registers both dashboard commands and safely handles provider presence", async () => {
+  it("registers dashboard commands and safely handles provider presence", async () => {
     const deps = createDependencies();
 
     const disposables = registerDashboardCommands(deps);
 
-    expect(disposables).toHaveLength(2);
-    expect(vscode.commands.registerCommand).toHaveBeenCalledTimes(2);
+    expect(disposables).toHaveLength(3);
+    expect(vscode.commands.registerCommand).toHaveBeenCalledTimes(3);
 
     getRegisteredCommand("opencodeTui.toggleDashboard")();
     expect(deps.provider?.toggleDashboard).toHaveBeenCalledTimes(1);
+
+    getRegisteredCommand("opencodeTui.toggleTmuxCommandToolbar")();
+    expect(deps.provider?.toggleTmuxCommandToolbar).toHaveBeenCalledTimes(1);
 
     vi.clearAllMocks();
     const harness = createPanelHarness();

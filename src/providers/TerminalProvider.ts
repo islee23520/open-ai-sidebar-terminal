@@ -641,6 +641,14 @@ export class TerminalProvider implements vscode.WebviewViewProvider {
     void vscode.commands.executeCommand("opencodeTui.openTerminalManager");
   }
 
+  public toggleTmuxCommandToolbar(): void {
+    if (!this.sessionRuntime.getSelectedTmuxSessionId()) {
+      return;
+    }
+
+    this.postWebviewMessage({ type: "toggleTmuxCommandToolbar" });
+  }
+
   public dispose(): void {
     this.sessionRuntime.dispose();
   }

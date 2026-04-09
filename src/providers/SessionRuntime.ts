@@ -1175,6 +1175,12 @@ export class SessionRuntime {
   }
 
   private notifyActiveSession(sessionId: string | undefined): void {
+    void vscode.commands.executeCommand(
+      "setContext",
+      "opencodeTui.tmuxAttached",
+      Boolean(sessionId),
+    );
+
     if (!sessionId) {
       this.stopClipboardSync();
       this.callbacks.postMessage({ type: "activeSession" });

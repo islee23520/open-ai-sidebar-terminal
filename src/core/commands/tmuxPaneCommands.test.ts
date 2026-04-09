@@ -95,6 +95,15 @@ function createHarness(options?: {
   const resolveActiveTmuxSessionId = vi.fn<() => string | undefined>(() =>
     options && "sessionId" in options ? options.sessionId : "session-1",
   );
+  const resolveActiveTmuxFocus = vi.fn(async () =>
+    resolveActiveTmuxSessionId()
+      ? {
+          sessionId: resolveActiveTmuxSessionId()!,
+          windowId: "@1",
+          paneId: "%1",
+        }
+      : undefined,
+  );
   const panes = options?.panes ?? defaultPanes;
   const windows = options?.windows ?? defaultWindows;
 
@@ -142,6 +151,7 @@ function createHarness(options?: {
   const deps: TmuxPaneCommandDependencies = {
     tmuxManager,
     resolveActiveTmuxSessionId,
+    resolveActiveTmuxFocus,
     resolveWorkspacePath: vi.fn(() => "/test/workspace"),
     provider,
   };
@@ -285,14 +295,9 @@ describe("registerTmuxPaneCommands", () => {
     expect(horizontalHarness.splitPane).toHaveBeenNthCalledWith(1, "%2", "h", {
       workingDirectory: "/test/workspace",
     });
-    expect(horizontalHarness.splitPane).toHaveBeenNthCalledWith(
-      2,
-      "%1",
-      "h",
-      {
-        workingDirectory: "/test/workspace",
-      },
-    );
+    expect(horizontalHarness.splitPane).toHaveBeenNthCalledWith(2, "%1", "h", {
+      workingDirectory: "/test/workspace",
+    });
 
     const noSessionHarness = createHarness({ sessionId: undefined });
     await getHandler(noSessionHarness, "opencodeTui.tmuxSplitPaneV")();
@@ -500,7 +505,10 @@ describe("registerTmuxPaneCommands", () => {
 
       await handler();
       if (methodName === "createWindow") {
-        expect(harness[methodName]).toHaveBeenCalledWith("session-1", "/test/workspace");
+        expect(harness[methodName]).toHaveBeenCalledWith(
+          "session-1",
+          "/test/workspace",
+        );
       } else {
         expect(harness[methodName]).toHaveBeenCalledWith("session-1");
       }
