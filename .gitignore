@@ -16,6 +16,7 @@ build/
 .claude/
 .omc/
 .omx/
+.agents/
 
 # test coverage
 coverage/
@@ -29,5 +30,5 @@ nul
 .synapse/
 
 // generated docs
-docs/
+docs/superpowers
 memories/
