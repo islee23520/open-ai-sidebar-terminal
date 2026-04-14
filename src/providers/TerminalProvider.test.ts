@@ -1399,6 +1399,24 @@ describe("TerminalProvider", () => {
     expect(startSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("opens the terminal renderer in an editor tab and locks its editor group", () => {
+    mockConfiguration();
+    provider = createProvider();
+    resolveProvider(provider);
+
+    provider.openInEditorTab();
+
+    expect(vscode.window.createWebviewPanel).toHaveBeenCalledWith(
+      "opencodeTui.terminalEditor",
+      "Open Sidebar Terminal",
+      vscode.ViewColumn.Beside,
+      expect.any(Object),
+    );
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+      "workbench.action.lockEditorGroup",
+    );
+  });
+
   it("reuses an existing editor panel instead of creating another one", () => {
     mockConfiguration();
     provider = createProvider();
@@ -1414,6 +1432,10 @@ describe("TerminalProvider", () => {
     expect(vscode.window.createWebviewPanel).toHaveBeenCalledTimes(1);
     expect(panel.reveal).toHaveBeenCalledWith(vscode.ViewColumn.Active);
     expect(focusSpy).toHaveBeenCalledTimes(1);
+    expect(vscode.commands.executeCommand).toHaveBeenCalledTimes(1);
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+      "workbench.action.lockEditorGroup",
+    );
   });
 
   it("replays the active session state to the editor panel so the toolbar stays visible", () => {

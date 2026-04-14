@@ -234,6 +234,7 @@ export class TerminalProvider
     );
 
     this.initializeEditorPanel(panel);
+    void vscode.commands.executeCommand("workbench.action.lockEditorGroup");
   }
 
   public async deserializeWebviewPanel(

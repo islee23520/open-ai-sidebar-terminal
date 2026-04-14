@@ -270,7 +270,7 @@
         },
         {
           "command": "opencodeTui.openTerminalInEditor",
-          "group": "navigation"
+          "group": "navigation@1"
         }
       ],
       "explorer/context": [
