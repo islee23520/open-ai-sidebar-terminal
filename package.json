@@ -155,7 +155,10 @@
         "command": "opencodeTui.openTerminalInEditor",
         "title": "Open Terminal in Editor",
         "category": "Open Sidebar Terminal",
-        "icon": "$(terminal-bash)"
+        "icon": {
+          "light": "resources/opencode-activity-bar.svg",
+          "dark": "resources/opencode-activity-bar-dark.svg"
+        }
       },
       {
         "command": "opencodeTui.restoreTerminalToSidebar",
