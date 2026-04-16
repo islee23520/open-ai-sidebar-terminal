@@ -15,7 +15,13 @@ export const window = {
   activeTextEditor: undefined as any,
   activeTerminal: undefined as any,
   terminals: [] as any[],
-  tabGroups: { all: [] as any[] },
+  tabGroups: {
+    all: [] as any[],
+    onDidChangeTabGroups: vi.fn((listener: Function) => {
+      void listener;
+      return { dispose: vi.fn() };
+    }),
+  },
   visibleTextEditors: [] as any[],
   registerWebviewViewProvider: vi.fn(),
   registerWebviewPanelSerializer: vi.fn(() => ({ dispose: vi.fn() })),

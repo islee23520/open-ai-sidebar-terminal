@@ -39,6 +39,11 @@ export const TMUX_RAW_ALLOWED_SUBCOMMANDS = [
 
 export type TmuxRawSubcommand = (typeof TMUX_RAW_ALLOWED_SUBCOMMANDS)[number];
 
+export interface DroppedBlobFile {
+  name: string;
+  data: string;
+}
+
 export type WebviewMessage =
   | { type: "terminalInput"; data: string }
   | { type: "terminalResize"; cols: number; rows: number }
@@ -63,6 +68,7 @@ export type WebviewMessage =
       files: string[];
       shiftKey: boolean;
       dropCell?: { col: number; row: number };
+      blobFiles?: DroppedBlobFile[];
     }
   | { type: "getClipboard" }
   | { type: "setClipboard"; text: string }
@@ -445,4 +451,5 @@ export interface ExtensionConfig {
   maxDiagnosticLength: number;
   enableAutoSpawn: boolean;
   codeActionSeverities: DiagnosticSeverity[];
+  collapseSecondaryBarOnEditorOpen: boolean;
 }
