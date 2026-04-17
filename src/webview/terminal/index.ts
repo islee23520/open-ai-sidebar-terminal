@@ -12,16 +12,11 @@ import {
 import { createLinkProvider } from "../links";
 import { handleDrop } from "../dragdrop";
 import { postMessage } from "../shared/vscode-api";
-import {
-  copySelectionToClipboard,
-  handlePasteWithImageSupport,
-} from "../clipboard";
 
 export interface TerminalInstance {
   terminal: Terminal;
   fitAddon: FitAddon;
   dispose: () => void;
-  keyboardHandler: ReturnType<typeof createKeyboardHandler>;
 }
 
 const MOUSE_ENABLE = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
@@ -53,13 +48,7 @@ export function initTerminal(
     scrollback: config.scrollback,
   });
 
-  const keyboardHandler = createKeyboardHandler(terminal, {
-    onCopy: copySelectionToClipboard,
-    onPaste: handlePasteWithImageSupport,
-    onTerminalInput: options.onData,
-    onToggleTmuxCommands: options.onToggleTmuxCommands,
-  });
-
+  const keyboardHandler = createKeyboardHandler();
   terminal.attachCustomKeyEventHandler(keyboardHandler.handler);
 
   const fitAddon = new FitAddon();
@@ -95,11 +84,6 @@ export function initTerminal(
   const refreshTerminal = () => terminal.refresh(0, terminal.rows - 1);
   container.addEventListener("focusin", refreshTerminal);
   container.addEventListener("click", refreshTerminal);
-  container.addEventListener(
-    "mousedown",
-    keyboardHandler.clearShortcutSequence,
-  );
-  window.addEventListener("blur", keyboardHandler.clearShortcutSequence);
 
   const cleanupVisibility = setupVisibilityHandling(
     terminal,
@@ -110,15 +94,6 @@ export function initTerminal(
   const cleanupResize = setupResizeHandling(terminal, fitAddon, container);
 
   terminal.onData((data) => {
-    if (keyboardHandler.justHandledCtrlC) {
-      keyboardHandler.setJustHandledCtrlC(false);
-      const filteredData = data.split("\u0003").join("");
-      if (filteredData) {
-        options.onData(filteredData);
-      }
-      return;
-    }
-
     if (data) {
       options.onData(data);
     }
@@ -173,11 +148,6 @@ export function initTerminal(
     cleanupVisibility();
     container.removeEventListener("focusin", refreshTerminal);
     container.removeEventListener("click", refreshTerminal);
-    container.removeEventListener(
-      "mousedown",
-      keyboardHandler.clearShortcutSequence,
-    );
-    window.removeEventListener("blur", keyboardHandler.clearShortcutSequence);
     window.removeEventListener("dragover", dragOverHandler);
     window.removeEventListener("dragleave", dragLeaveHandler);
     window.removeEventListener("drop", dropHandler);
@@ -189,7 +159,6 @@ export function initTerminal(
     terminal,
     fitAddon,
     dispose,
-    keyboardHandler,
   };
 }
 
