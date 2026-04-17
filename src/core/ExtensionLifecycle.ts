@@ -151,7 +151,7 @@ export class ExtensionLifecycle {
           }
 
           void vscode.commands.executeCommand(
-            "workbench.action.toggleAuxiliaryBar",
+            "workbench.action.closeAuxiliaryBar",
           );
           void vscode.commands.executeCommand("workbench.action.closeSidebar");
         }),

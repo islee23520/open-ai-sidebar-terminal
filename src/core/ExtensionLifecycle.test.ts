@@ -164,7 +164,7 @@ describe("ExtensionLifecycle", () => {
       listener?.();
 
       expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
-        "workbench.action.toggleAuxiliaryBar",
+        "workbench.action.closeAuxiliaryBar",
       );
       expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
         "workbench.action.closeSidebar",
@@ -199,7 +199,7 @@ describe("ExtensionLifecycle", () => {
       listener?.();
 
       expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith(
-        "workbench.action.toggleAuxiliaryBar",
+        "workbench.action.closeAuxiliaryBar",
       );
       expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith(
         "workbench.action.closeSidebar",
