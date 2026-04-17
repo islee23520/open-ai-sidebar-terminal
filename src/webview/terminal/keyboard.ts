@@ -5,18 +5,6 @@ const detectMacPlatform = (): boolean =>
 const isLetterOrDigitCode = (code: string): boolean =>
   /^Key[A-Z]$/.test(code) || /^Digit[0-9]$/.test(code);
 
-const isLetterOrDigitChord = (event: KeyboardEvent): boolean => {
-  if (event.altKey) {
-    return false;
-  }
-
-  if (!event.ctrlKey && !event.metaKey) {
-    return false;
-  }
-
-  return isLetterOrDigitCode(event.code);
-};
-
 export interface KeyboardHandlerOptions {
   isMac?: boolean;
 }
@@ -24,28 +12,27 @@ export interface KeyboardHandlerOptions {
 export function createKeyboardHandler(options: KeyboardHandlerOptions = {}) {
   const isMac = options.isMac ?? detectMacPlatform();
 
-  const isWorkbenchShortcut = (event: KeyboardEvent): boolean => {
-    if (event.altKey) {
-      return false;
-    }
-
-    const hasPrimaryModifier = isMac
+  const isWorkbenchPrimaryModifier = (event: KeyboardEvent): boolean =>
+    isMac
       ? event.metaKey && !event.ctrlKey
       : event.ctrlKey && !event.metaKey;
 
-    return hasPrimaryModifier && isLetterOrDigitCode(event.code);
-  };
-
   const handler = (event: KeyboardEvent): boolean => {
-    if (isWorkbenchShortcut(event)) {
+    const isLetterOrDigitChord =
+      !event.altKey &&
+      (event.ctrlKey || event.metaKey) &&
+      isLetterOrDigitCode(event.code);
+
+    if (!isLetterOrDigitChord) {
+      return true;
+    }
+
+    if (isWorkbenchPrimaryModifier(event)) {
       return false;
     }
 
-    if (isLetterOrDigitChord(event)) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-
+    event.preventDefault();
+    event.stopPropagation();
     return true;
   };
 
