@@ -226,6 +226,13 @@ export class TerminalProvider
 
     const config = vscode.workspace.getConfiguration("opencodeTui");
 
+    if (config.get<boolean>("collapseSecondaryBarOnEditorOpen", true)) {
+      await vscode.commands.executeCommand(
+        "workbench.action.closeAuxiliaryBar",
+      );
+      await vscode.commands.executeCommand("workbench.action.closeSidebar");
+    }
+
     const panel = vscode.window.createWebviewPanel(
       TerminalProvider.panelViewType,
       "Open Sidebar Terminal",
@@ -234,13 +241,6 @@ export class TerminalProvider
     );
 
     this.initializeEditorPanel(panel);
-
-    if (config.get<boolean>("collapseSecondaryBarOnEditorOpen", false)) {
-      await vscode.commands.executeCommand(
-        "workbench.action.closeAuxiliaryBar",
-      );
-      await vscode.commands.executeCommand("workbench.action.closeSidebar");
-    }
 
     await vscode.commands.executeCommand("workbench.action.lockEditorGroup");
   }

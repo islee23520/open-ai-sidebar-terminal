@@ -448,8 +448,8 @@
         },
         "opencodeTui.collapseSecondaryBarOnEditorOpen": {
           "type": "boolean",
-          "default": false,
-          "description": "Automatically collapse the secondary and primary sidebars when a new editor group is opened."
+          "default": true,
+          "description": "Close the secondary and primary sidebars before moving the terminal into an editor group so the new editor tab gets the full workspace width."
         },
         "opencodeTui.codeActionSeverities": {
           "type": "array",

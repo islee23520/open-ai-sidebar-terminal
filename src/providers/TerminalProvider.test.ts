@@ -1428,6 +1428,30 @@ describe("TerminalProvider", () => {
     );
   });
 
+  it("closes the sidebars before creating the editor panel to avoid layout race", async () => {
+    mockConfiguration({ collapseSecondaryBarOnEditorOpen: true });
+    provider = createProvider();
+    resolveProvider(provider);
+
+    await provider.openInEditorTab();
+
+    const executeCalls = vi.mocked(vscode.commands.executeCommand).mock.calls;
+    const executeOrders = vi.mocked(vscode.commands.executeCommand).mock
+      .invocationCallOrder;
+
+    const closeAuxIdx = executeCalls.findIndex(
+      (args) => args[0] === "workbench.action.closeAuxiliaryBar",
+    );
+    const closeSidebarIdx = executeCalls.findIndex(
+      (args) => args[0] === "workbench.action.closeSidebar",
+    );
+    const createOrder = vi.mocked(vscode.window.createWebviewPanel).mock
+      .invocationCallOrder[0];
+
+    expect(executeOrders[closeAuxIdx]).toBeLessThan(createOrder);
+    expect(executeOrders[closeSidebarIdx]).toBeLessThan(createOrder);
+  });
+
   it("keeps the sidebar open when opening the editor tab and collapse-on-open is disabled", async () => {
     mockConfiguration({ collapseSecondaryBarOnEditorOpen: false });
     provider = createProvider();
