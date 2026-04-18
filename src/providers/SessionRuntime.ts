@@ -217,12 +217,9 @@ export class SessionRuntime {
       const enableHttpApi = config.get<boolean>("enableHttpApi", true);
       const httpTimeout = config.get<number>("httpTimeout", 5000);
 
-      // Resolve workspace path first (needed for tmux session resolution)
       const { workspacePath, isWorkspaceScoped } =
         this.resolveStartupWorkspacePath();
 
-      // Determine tmux session before resolving tool.
-      // Non-tmux sessions start with the default shell.
       const forceNativeShell = this.forceNativeShellNextStart;
       const selectedTmuxSessionId = this.selectedTmuxSessionId;
       let tmuxSessionId = forceNativeShell
@@ -260,8 +257,6 @@ export class SessionRuntime {
         } catch {}
       }
 
-      // Only resolve AI tool when a tmux session is available.
-      // Non-tmux sessions start with the default shell (no command).
       let resolvedTool: AiToolConfig | undefined;
       let command: string | undefined;
 
@@ -832,8 +827,6 @@ export class SessionRuntime {
     if (!this.tmuxSessionManager) {
       return undefined;
     }
-    // Always use current workspace session for toolbar actions
-    // Do NOT fall back to selectedTmuxSessionId which may be from another workspace
     const workspacePath = this.resolveWorkspacePathForTmuxFallback();
     const sessionId = workspacePath
       ? await this.ensureWorkspaceSession(workspacePath)
@@ -876,7 +869,6 @@ export class SessionRuntime {
     if (!this.tmuxSessionManager) {
       return;
     }
-    // Always use current workspace session for toolbar actions
     const workspacePath = this.resolveWorkspacePathForTmuxFallback();
     const sessionId = workspacePath
       ? await this.ensureWorkspaceSession(workspacePath)
@@ -906,8 +898,6 @@ export class SessionRuntime {
     if (!this.tmuxSessionManager) {
       return undefined;
     }
-    // Always use current workspace session for toolbar actions
-    // Do NOT fall back to selectedTmuxSessionId which may be from another workspace
     const workspacePath = this.resolveWorkspacePathForTmuxFallback();
     const sessionId = workspacePath
       ? await this.ensureWorkspaceSession(workspacePath)
@@ -946,7 +936,6 @@ export class SessionRuntime {
     if (!this.tmuxSessionManager) {
       return;
     }
-    // Always use current workspace session for toolbar actions
     const workspacePath = this.resolveWorkspacePathForTmuxFallback();
     const sessionId = workspacePath
       ? await this.ensureWorkspaceSession(workspacePath)
@@ -974,7 +963,6 @@ export class SessionRuntime {
     if (!this.tmuxSessionManager) {
       return;
     }
-    // Always use current workspace session for toolbar actions
     const workspacePath = this.resolveWorkspacePathForTmuxFallback();
     const sessionId = workspacePath
       ? await this.ensureWorkspaceSession(workspacePath)
@@ -1106,7 +1094,6 @@ export class SessionRuntime {
     if (!this.tmuxSessionManager) {
       return false;
     }
-    // Always use current workspace session for toolbar actions
     const workspacePath = this.resolveWorkspacePathForTmuxFallback();
     const sessionId = workspacePath
       ? await this.ensureWorkspaceSession(workspacePath)
@@ -1276,7 +1263,6 @@ export class SessionRuntime {
       return;
     }
 
-    // Cache initial pane count and active pane commands
     try {
       const panes = await this.tmuxSessionManager.listPanes(sessionId, {
         activeWindowOnly: true,
@@ -1289,11 +1275,8 @@ export class SessionRuntime {
           activePane.currentCommand ?? "",
         );
       }
-    } catch {
-      // Ignore — session might not be ready yet
-    }
+    } catch {}
 
-    // SIGUSR2 for immediate detection (from tmux hooks)
     if (!this.sigusr2Handler) {
       this.sigusr2Handler = () => {
         this.sigusr2FiredSinceLastCheck = true;
@@ -1302,7 +1285,6 @@ export class SessionRuntime {
       process.on("SIGUSR2", this.sigusr2Handler);
     }
 
-    // onExternalPaneChange event listener
     if (
       !this.externalChangeListener &&
       this.tmuxSessionManager.onExternalPaneChange
@@ -1313,8 +1295,6 @@ export class SessionRuntime {
         });
     }
 
-    // Polling fallback for reliable detection (covers hook misses,
-    // tool exits, and externally-created sessions)
     if (!this.paneMonitorInterval) {
       this.paneMonitorInterval = setInterval(() => {
         void this.checkPaneChanges();
@@ -1342,7 +1322,6 @@ export class SessionRuntime {
       return;
     }
 
-    // Discover all current sessions (handles externally-created sessions too)
     let activeSessionId =
       this.selectedTmuxSessionId ??
       this.resolveTmuxSessionIdForInstance(this.activeInstanceId);
@@ -1353,9 +1332,7 @@ export class SessionRuntime {
         if (sessions.length > 0) {
           activeSessionId = sessions[0].id;
         }
-      } catch {
-        // tmux not available
-      }
+      } catch {}
     }
 
     if (!activeSessionId) {
@@ -1372,7 +1349,6 @@ export class SessionRuntime {
         this.sigusr2FiredSinceLastCheck = false;
       }
 
-      // Always update tracking state
       this.knownPaneIds.set(activeSessionId, currentPaneIds);
       for (const pane of panes) {
         const key = `${activeSessionId}:${pane.paneId}`;
@@ -1401,9 +1377,7 @@ export class SessionRuntime {
           canKillPane,
         });
       }
-    } catch {
-      // Silently ignore — polling is best-effort
-    }
+    } catch {}
   }
 
   private stopClipboardSync(): void {

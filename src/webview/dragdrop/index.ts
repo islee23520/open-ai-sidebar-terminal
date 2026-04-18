@@ -128,18 +128,6 @@ export async function handleDrop(
   const transferTypes = Array.from(event.dataTransfer.types ?? []);
   const transferItems = Array.from(event.dataTransfer.items ?? []);
 
-  console.log("[DROP-DIAG] types:", transferTypes);
-  console.log("[DROP-DIAG] items count:", transferItems.length);
-  for (const type of transferTypes) {
-    try {
-      const raw = event.dataTransfer.getData(type);
-      console.log(
-        `[DROP-DIAG] getData(${type}):`,
-        JSON.stringify(raw).slice(0, 400),
-      );
-    } catch {}
-  }
-
   const files: string[] = [];
   const seen = new Set<string>();
 
@@ -159,43 +147,32 @@ export async function handleDrop(
       item.getAsString((value) => resolve(value ?? ""));
     });
 
-  const consumePayload = (payload: string, source: string) => {
+  const consumePayload = (payload: string) => {
     if (!payload) {
       return;
     }
 
     const extracted = parseDroppedText(payload);
-    if (extracted.length > 0) {
-      console.log(
-        `[DROP-DIAG] extracted ${extracted.length} path(s) from ${source}:`,
-        extracted,
-      );
-    }
     for (const p of extracted) {
       addFile(p);
     }
   };
 
-  // Exhaustive synchronous extraction from all available MIME types.
-  // In VS Code webviews, some OS drag payloads are only exposed via specific types.
   for (const type of transferTypes) {
     try {
       const payload = event.dataTransfer.getData(type);
-      consumePayload(payload, `getData(${type})`);
+      consumePayload(payload);
     } catch {
-      // Best effort; continue scanning other types.
     }
   }
 
-  // Exhaustive asynchronous extraction from all string DataTransfer items.
-  // Some payloads (including URI lists in certain environments) are only available here.
   for (const item of transferItems) {
     if (item.kind !== "string") {
       continue;
     }
 
     const payload = await readItemString(item);
-    consumePayload(payload, `item(${item.type || "unknown"})`);
+    consumePayload(payload);
   }
 
   const droppedFileObjects: File[] = [];
@@ -214,8 +191,6 @@ export async function handleDrop(
   }
 
   if (files.length > 0) {
-    console.log(`[WEBVIEW] Sending ${files.length} files:`, files);
-
     let dropCell: DropCell | undefined;
     if (event.shiftKey) {
       const screenEl = options.getScreenElement();
@@ -238,14 +213,13 @@ export async function handleDrop(
             col: Math.floor((relX / rect.width) * cols),
             row: Math.floor((relY / rect.height) * rows),
           };
-          console.log(`[WEBVIEW] dropCell computed:`, dropCell);
         }
       }
     }
 
     postMessage({
       type: "filesDropped",
-      files: files,
+      files,
       shiftKey: event.shiftKey,
       dropCell,
     });
@@ -256,11 +230,6 @@ export async function handleDrop(
           name: file.name,
           data: await readFileAsDataUrl(file),
         })),
-      );
-
-      console.log(
-        `[WEBVIEW] Sending ${blobFiles.length} blob-backed dropped file(s)`,
-        blobFiles.map((file) => file.name),
       );
 
       let dropCell: DropCell | undefined;
@@ -285,7 +254,6 @@ export async function handleDrop(
               col: Math.floor((relX / rect.width) * cols),
               row: Math.floor((relY / rect.height) * rows),
             };
-            console.log(`[WEBVIEW] dropCell computed:`, dropCell);
           }
         }
       }
@@ -300,7 +268,5 @@ export async function handleDrop(
     } catch (error) {
       console.error("[WEBVIEW] Failed to read dropped file blobs", error);
     }
-  } else {
-    console.log("[WEBVIEW] No files collected from drop event");
   }
 }
