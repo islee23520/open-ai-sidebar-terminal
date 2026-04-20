@@ -70,9 +70,6 @@ export class TerminalProvider
       switchToTmuxSession: (sessionId) => this.switchToTmuxSession(sessionId),
       killTmuxSession: (sessionId) => this.killTmuxSession(sessionId),
       createTmuxSession: () => this.createTmuxSession(),
-      createTmuxWindow: () => this.createTmuxWindow(),
-      navigateTmuxWindow: (direction) => this.navigateTmuxWindow(direction),
-      navigateTmuxSession: (direction) => this.navigateTmuxSession(direction),
       toggleDashboard: () => this.toggleDashboard(),
       toggleEditorAttachment: () => this.toggleEditorAttachment(),
       restart: () => this.restart(),
@@ -105,9 +102,7 @@ export class TerminalProvider
         ),
       executeRawTmuxCommand: (subcommand, args) =>
         this.executeRawTmuxCommand(subcommand, args),
-      splitTmuxPane: (direction) => this.splitTmuxPane(direction),
       zoomTmuxPane: () => this.zoomTmuxPane(),
-      killTmuxPane: () => this.killTmuxPane(),
       getSelectedTmuxSessionId: () => this.getSelectedTmuxSessionId(),
       isTmuxAvailable: () => !!this.tmuxSessionManager,
     };
@@ -282,6 +277,12 @@ export class TerminalProvider
     });
   }
 
+  public requestPaste(): void {
+    this.postWebviewMessage({
+      type: "requestPaste",
+    });
+  }
+
   public getApiClient(): OpenCodeApiClient | undefined {
     return this.sessionRuntime.getApiClient();
   }
@@ -321,18 +322,6 @@ export class TerminalProvider
     return this.sessionRuntime.createTmuxSession();
   }
 
-  public async createTmuxWindow(): Promise<void> {
-    await this.sessionRuntime.createTmuxWindow();
-  }
-
-  public async navigateTmuxWindow(direction: "next" | "prev"): Promise<void> {
-    await this.sessionRuntime.navigateTmuxWindow(direction);
-  }
-
-  public async navigateTmuxSession(direction: "next" | "prev"): Promise<void> {
-    await this.sessionRuntime.navigateTmuxSession(direction);
-  }
-
   public async killTmuxSession(sessionId: string): Promise<void> {
     await this.sessionRuntime.killTmuxSession(sessionId);
   }
@@ -362,22 +351,12 @@ export class TerminalProvider
     );
   }
 
-  public async splitTmuxPane(
-    direction: "h" | "v",
-  ): Promise<string | undefined> {
-    return await this.sessionRuntime.splitTmuxPane(direction);
-  }
-
   public getSelectedTmuxSessionId(): string | undefined {
     return this.sessionRuntime.getSelectedTmuxSessionId();
   }
 
   public async zoomTmuxPane(): Promise<void> {
     await this.sessionRuntime.zoomTmuxPane();
-  }
-
-  public async killTmuxPane(): Promise<void> {
-    await this.sessionRuntime.killTmuxPane();
   }
 
   public async sendPrompt(prompt: string): Promise<void> {
