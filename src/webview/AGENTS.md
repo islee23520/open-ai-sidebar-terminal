@@ -6,22 +6,10 @@ Browser-sandbox code. xterm.js rendering, DOM events, host messaging via `acquir
 
 ## WHERE TO LOOK
 
-| Task                  | Location       | Lines | Notes                                     |
-| --------------------- | -------------- | ----- | ----------------------------------------- |
-| Terminal UI bootstrap | `main.ts`      | 698   | xterm.js + WebGL + fit/resize             |
-| Instance dashboard    | `dashboard.ts` | 142   | **Orphan** — not used by active providers |
-
-## MAIN.TS — RESPONSIBILITY GROUPS
-
-| Group                                    | Approx Lines | Notes                                                  |
-| ---------------------------------------- | ------------ | ------------------------------------------------------ |
-| Terminal init (xterm, addons, observers) | ~250         | FitAddon, WebglAddon, WebLinksAddon                    |
-| File link parsing (regex, URL formats)   | ~110         | `@file#L`, `file://`, `/abs`, `./rel`, `path:line:col` |
-| Drag-and-drop handling                   | ~220         | Path canonicalization, JSON/text parsing               |
-| Message handlers                         | ~100         | 7 host message types                                   |
-| Clipboard + image paste                  | ~80          | readText, writeText, image validation                  |
-
-**Planned extraction:** link parser, drag-drop, and clipboard into separate modules
+| Task                  | Location                | Notes                                     |
+| --------------------- | ----------------------- | ----------------------------------------- |
+| Terminal UI bootstrap | `main.ts`               | xterm.js + WebGL + fit/resize             |
+| Dashboard UI          | `dashboard-manager.tsx` | Preact-based Terminal Manager dashboard    |
 
 ## CONVENTIONS
 

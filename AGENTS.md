@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Updated:** 2026-03-29 Asia/Seoul
-**Commit:** 355d827 | **Branch:** feat/tmux
+**Updated:** 2026-04-20 Asia/Seoul
+**Commit:** 00cab61 | **Branch:** improve/windows-compatibility
 
 ## OVERVIEW
 
@@ -33,31 +33,31 @@ VS Code extension — embeds Open Sidebar Terminal in the sidebar. PTY + HTTP co
 ```
 extension.ts → ExtensionLifecycle.activate()
   ├── 13 services created (manual DI, no container)
-  ├── 2 providers registered (OpenCodeTuiProvider, TmuxSessionsDashboardProvider)
+  ├── 2 providers registered (TerminalProvider, TerminalDashboardProvider)
   ├── CodeActionProvider registered
-  └── 21 commands registered via core/commands/
+  └── command groups under core/commands/
 ```
 
-**Webpack 2 bundles:** extension.js (node), webview.js (web)
+**Webpack outputs:** extension.js, webview.js, dashboard.js
 
 **Host↔Webview messages:** discriminated unions in `src/types.ts`
 
 - `WebviewMessage` — webview→host (input, resize, file refs, tmux actions)
 - `HostMessage` — host→webview (output, clipboard, visibility, platform)
-- `TmuxDashboardActionMessage` — tmux dashboard actions (15 action types)
+- `TmuxDashboardActionMessage` — tmux dashboard actions
 
 ## WHERE TO LOOK
 
 | Task                  | Location                                         | Notes                                                     |
 | --------------------- | ------------------------------------------------ | --------------------------------------------------------- |
-| Activation / wiring   | `src/core/ExtensionLifecycle.ts`                 | 394 lines — service creation + provider registration      |
-| Command registration  | `src/core/commands/`                             | 4 files: terminal, tmuxSession, tmuxPane, index           |
-| Main sidebar terminal | `src/providers/opencode/OpenCodeTuiProvider.ts`  | 283 lines shell + MessageRouter + SessionRuntime          |
-| Tmux dashboard        | `src/providers/TmuxSessionsDashboardProvider.ts` | 755 lines, inline HTML                                    |
+| Activation / wiring   | `src/core/ExtensionLifecycle.ts`                 | service creation + provider registration      |
+| Command registration  | `src/core/commands/`                             | terminalCommands, tmuxSessionCommands, tmuxPaneCommands, dashboardCommands |
+| Main sidebar terminal | `src/providers/TerminalProvider.ts`              | Shell + MessageRouter + SessionRuntime                    |
+| Terminal dashboard    | `src/providers/TerminalDashboardProvider.ts`     | Terminal Manager dashboard (inline HTML)                  |
 | Instance state        | `src/services/InstanceStore.ts`                  | EventEmitter hub, all services depend here                |
 | Tmux CLI wrapper      | `src/services/TmuxSessionManager.ts`             | Standalone, used by both providers                        |
 | HTTP API              | `src/services/OpenCodeApiClient.ts`              | Retry/backoff, prompt append                              |
-| Browser terminal UI   | `src/webview/main.ts`                            | 698 lines, xterm.js + drag/drop + links                   |
+| Browser terminal UI   | `src/webview/main.ts`                            | xterm.js + drag/drop + links                   |
 | Shared contracts      | `src/types.ts`                                   | Message types, DTOs, ExtensionConfig                      |
 | Test mocks            | `src/test/mocks/`                                | Manual vscode.ts + node-pty.ts (no @vscode/test-electron) |
 
@@ -67,7 +67,7 @@ extension.ts → ExtensionLifecycle.activate()
 | ---------------------- | -------- | -------------------------------------- | -------------------------------------- |
 | `activate`             | function | `src/extension.ts`                     | VS Code extension entry                |
 | `ExtensionLifecycle`   | class    | `src/core/ExtensionLifecycle.ts`       | Service creation, command registration |
-| `OpenCodeTuiProvider`  | class    | `src/providers/OpenCodeTuiProvider.ts` | Main sidebar webview provider          |
+| `TerminalProvider`     | class    | `src/providers/TerminalProvider.ts`    | Main sidebar webview provider          |
 | `TmuxSessionManager`   | class    | `src/services/TmuxSessionManager.ts`   | tmux CLI: sessions, panes, attach      |
 | `InstanceStore`        | class    | `src/services/InstanceStore.ts`        | In-memory instance state + events      |
 | `TerminalManager`      | class    | `src/terminals/TerminalManager.ts`     | node-pty process lifecycle             |
@@ -103,9 +103,8 @@ extension.ts → ExtensionLifecycle.activate()
 
 ## KNOWN DEBT
 
-- `TmuxSessionsDashboardProvider.ts` (755 lines) — inline HTML, needs split
+- `TerminalDashboardProvider.ts` — inline HTML, needs split
 - `PortManager` — created separately in provider and lifecycle (needs singleton consolidation)
-- `webview/dashboard.ts` — legacy orphan, deletion under review
 
 ## BUILD & TEST
 
