@@ -3,6 +3,7 @@ import * as TmuxPrompt from "./tmux-prompt";
 import * as AiSelector from "./ai-tool-selector";
 import * as TmuxCmd from "./tmux-command-dropdown";
 import { HostMessage } from "../types";
+import { handlePasteWithImageSupport } from "./clipboard";
 import { postMessage } from "./shared/vscode-api";
 import { initTerminal } from "./terminal";
 import { createMessageHandler, type MessageHandlerCallbacks } from "./messages";
@@ -10,6 +11,7 @@ import {
   setupEditorAttachmentButton,
   setupReloadButton,
   setupTmuxCommandButton,
+  setupDashboardToggleButton,
 } from "./toolbar";
 
 import {
@@ -130,9 +132,20 @@ function initApp(): void {
     messageHandler.fitAddon = instance.fitAddon;
   }
 
+  container.addEventListener(
+    "paste",
+    (event: ClipboardEvent) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void handlePasteWithImageSupport();
+    },
+    { capture: true },
+  );
+
   setupReloadButton();
   setupEditorAttachmentButton();
   setupTmuxCommandButton(() => currentSessionId);
+  setupDashboardToggleButton(() => dashboard.toggle());
   setupDashboardEventListeners(() => dashboard.toggle());
 
   window.addEventListener("message", (event: MessageEvent) => {

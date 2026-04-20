@@ -1,6 +1,7 @@
 import type { Terminal } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 import { HostMessage } from "../../types";
+import { handlePasteWithImageSupport } from "../clipboard";
 import { postMessage } from "../shared/vscode-api";
 import { scheduleRefresh } from "../shared/utils";
 
@@ -107,6 +108,10 @@ export function createMessageHandler(
             }
             scheduleRefresh(() => terminal.refresh(0, terminal.rows - 1));
           }
+          break;
+
+        case "requestPaste":
+          void handlePasteWithImageSupport();
           break;
 
         case "clipboardContent":
