@@ -567,6 +567,55 @@ describe("SessionRuntime - Workspace Session Resolution", () => {
       ).toBeUndefined();
     });
 
+    it("launches the selected tool directly when tmux is unavailable", async () => {
+      upsertInstance({
+        workspaceUri: "file:///workspace/project-a",
+        selectedAiTool: "preferred-tool",
+      });
+      sessionRuntime = new SessionRuntime(
+        mockTerminalManager,
+        {} as OutputCaptureManager,
+        undefined as unknown as OpenCodeApiClient,
+        mockPortManager,
+        undefined,
+        instanceStore,
+        mockLogger,
+        mockContextSharingService,
+        mockAiToolRegistry,
+        mockCallbacks,
+      );
+      vi.spyOn(
+        sessionRuntime as unknown as {
+          resolveToolForStartup: () => Promise<{ name: string }>;
+        },
+        "resolveToolForStartup",
+      ).mockResolvedValue({ name: "preferred-tool" });
+      vi.mocked(mockAiToolRegistry.getForConfig).mockReturnValue({
+        getLaunchCommand: vi.fn(() => "run-tool"),
+        supportsHttpApi: vi.fn(() => true),
+      } as never);
+      vi.mocked(mockPortManager.assignPortToTerminal).mockReturnValue(4312);
+      vi.spyOn(sessionRuntime, "pollForHttpReadiness").mockResolvedValue();
+
+      await sessionRuntime.startOpenCode();
+
+      expect(mockTerminalManager.createTerminal).toHaveBeenCalledWith(
+        "default",
+        "run-tool",
+        {
+          _EXTENSION_OPENCODE_PORT: "4312",
+          OPENCODE_CALLER: "vscode",
+        },
+        4312,
+        undefined,
+        undefined,
+        "default",
+        "/workspace/project-a",
+      );
+      expect(instanceStore.get("default")?.runtime.tmuxSessionId).toBeUndefined();
+      expect(instanceStore.get("default")?.runtime.port).toBe(4312);
+    });
+
     it("starts a tmux-backed tool session with HTTP enabled", async () => {
       upsertInstance({ workspaceUri: "file:///workspace/project-a" });
       vi.spyOn(

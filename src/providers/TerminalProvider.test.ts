@@ -328,7 +328,7 @@ describe("TerminalProvider", () => {
     expect(view.show).toHaveBeenCalledWith(true);
   });
 
-  it("starts default shell for non-tmux session without sidebar tree interaction", async () => {
+  it("starts the default AI tool directly for non-tmux sessions", async () => {
     mockConfiguration({ autoStartOnOpen: false, enableHttpApi: false });
     provider = createProvider();
     const createTerminalSpy = vi.spyOn(terminalManager, "createTerminal");
@@ -339,7 +339,7 @@ describe("TerminalProvider", () => {
 
     expect(createTerminalSpy).toHaveBeenCalledWith(
       "opencode-main",
-      undefined,
+      "opencode -c",
       {},
       undefined,
       120,
@@ -349,7 +349,7 @@ describe("TerminalProvider", () => {
     );
   });
 
-  it("ignores defaultAiTool config for non-tmux sessions and starts default shell", async () => {
+  it("uses defaultAiTool config for non-tmux sessions", async () => {
     mockConfiguration({
       autoStartOnOpen: false,
       enableHttpApi: false,
@@ -364,7 +364,7 @@ describe("TerminalProvider", () => {
 
     expect(createTerminalSpy).toHaveBeenCalledWith(
       "opencode-main",
-      undefined,
+      "codex",
       {},
       undefined,
       120,

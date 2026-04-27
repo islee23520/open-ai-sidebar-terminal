@@ -260,7 +260,10 @@ export class SessionRuntime {
       let resolvedTool: AiToolConfig | undefined;
       let command: string | undefined;
 
-      if (!forceNativeShell && (tmuxSessionId || this.pendingLaunchToolName)) {
+      if (
+        !forceNativeShell &&
+        (tmuxSessionId || this.pendingLaunchToolName || !this.tmuxSessionManager)
+      ) {
         resolvedTool = await this.resolveToolForStartup(config);
         if (!resolvedTool) {
           this.isStarting = false;
@@ -604,7 +607,7 @@ export class SessionRuntime {
     tmuxSessionId?: string,
   ): string | undefined {
     if (!tmuxSessionId) {
-      return undefined;
+      return defaultCommand;
     }
 
     return `tmux attach-session -t ${tmuxSessionId} \\; set-option -u status off`;
@@ -712,59 +715,6 @@ export class SessionRuntime {
       },
     );
     this.notifyActiveSession(sessionId);
-  }
-
-  private async resolveLaunchChoice(
-    configKey: "nativeShellDefault" | "tmuxSessionDefault",
-  ): Promise<string | undefined> {
-    const config = vscode.workspace.getConfiguration("opencodeTui");
-    const persisted = config.get<string>(configKey, "");
-    if (persisted === "shell" || this.resolveToolConfig(persisted, config)) {
-      return persisted;
-    }
-
-    const items = this.getConfiguredTools(config).map((tool) => ({
-      label: `$(terminal) ${tool.label}`,
-      description: `Launch ${tool.label} in the terminal`,
-      value: tool.name,
-    }));
-    items.push({
-      label: "$(shell) Default Shell (zsh)",
-      description: "Launch default shell without an AI tool",
-      value: "shell",
-    });
-
-    const picked = await vscode.window.showQuickPick(items, {
-      placeHolder: "What would you like to launch?",
-      canPickMany: false,
-    });
-
-    if (!picked) {
-      return undefined;
-    }
-
-    const choice =
-      picked.value ??
-      (picked.label.includes("Default Shell")
-        ? "shell"
-        : this.getConfiguredTools(config).find((tool) =>
-            picked.label.includes(tool.label),
-          )?.name);
-    if (!choice) {
-      return undefined;
-    }
-
-    const remember = await vscode.window.showInformationMessage(
-      "Remember this choice? You can change it later in settings.",
-      { modal: false },
-      "Yes, remember",
-    );
-
-    if (remember === "Yes, remember") {
-      await config.update(configKey, choice, vscode.ConfigurationTarget.Global);
-    }
-
-    return choice;
   }
 
   public async switchToNativeShell(): Promise<void> {
