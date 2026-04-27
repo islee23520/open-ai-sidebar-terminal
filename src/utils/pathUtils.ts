@@ -21,9 +21,10 @@ export function normalizeComparablePath(
 
   if (resolveRelative) {
     const hasDrivePrefix = /^[a-zA-Z]:[/\\]/.test(trimmed);
+    const hasUncPrefix = /^[/\\]{2}/.test(trimmed);
     const withoutTrailingSlash = trimmed.replace(/[\\/]+$/, "");
     const absolutePath =
-      hasDrivePrefix || withoutTrailingSlash.startsWith("/")
+      hasDrivePrefix || hasUncPrefix || withoutTrailingSlash.startsWith("/")
         ? withoutTrailingSlash
         : resolve(withoutTrailingSlash);
     normalized = absolutePath.replace(/\\/g, "/");

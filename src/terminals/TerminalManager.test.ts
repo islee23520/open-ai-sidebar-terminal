@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { TerminalManager } from "./TerminalManager";
 import type * as nodePtyTypes from "../test/mocks/node-pty";
 import type * as vscodeTypes from "../test/mocks/vscode";
@@ -22,10 +22,17 @@ vi.mock("node-pty", async () => {
 
 describe("TerminalManager", () => {
   let manager: TerminalManager;
+  const originalPlatform = process.platform;
 
   beforeEach(() => {
     vi.clearAllMocks();
     manager = new TerminalManager();
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, "platform", {
+      value: originalPlatform,
+    });
   });
 
   describe("createTerminal", () => {
@@ -326,6 +333,55 @@ describe("TerminalManager", () => {
       manager.createTerminal("test-id");
 
       expect(manager.getTerminal("test-id")).toBeDefined();
+    });
+
+    it("should use cmd.exe /c and preserve SystemRoot on Windows", () => {
+      Object.defineProperty(process, "platform", {
+        value: "win32",
+      });
+      vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
+        get: vi.fn((key: string) => {
+          if (key === "shellPath") return "cmd.exe";
+          if (key === "shellArgs") return [];
+          return undefined;
+        }),
+        update: vi.fn(),
+      } as any);
+
+      manager.createTerminal("test-id", "opencode");
+
+      expect(nodePty.spawn).toHaveBeenCalledWith(
+        "cmd.exe",
+        ["/c", "opencode"],
+        expect.objectContaining({
+          env: expect.objectContaining({
+            SystemRoot: process.env.SystemRoot ?? "C:\\Windows",
+            TERM: "xterm-256color",
+          }),
+        }),
+      );
+    });
+
+    it("should use PowerShell -Command on Windows", () => {
+      Object.defineProperty(process, "platform", {
+        value: "win32",
+      });
+      vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
+        get: vi.fn((key: string) => {
+          if (key === "shellPath") return "pwsh.exe";
+          if (key === "shellArgs") return [];
+          return undefined;
+        }),
+        update: vi.fn(),
+      } as any);
+
+      manager.createTerminal("test-id", "opencode");
+
+      expect(nodePty.spawn).toHaveBeenCalledWith(
+        "pwsh.exe",
+        ["-Command", "opencode"],
+        expect.any(Object),
+      );
     });
   });
 });

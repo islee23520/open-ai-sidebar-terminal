@@ -117,6 +117,16 @@ describe("normalizeComparablePath", () => {
         ),
       ).toBe("C:/Users/me");
     });
+
+    it("preserves Windows UNC paths", () => {
+      expect(
+        normalizeComparablePath(
+          "\\\\server\\share\\Project",
+          { resolveRelative: true, caseFolding: "never" },
+          "win32",
+        ),
+      ).toBe("//server/share/Project");
+    });
   });
 
   it("handles Windows drive-letter paths with mixed separators", () => {
