@@ -1,6 +1,53 @@
 import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_SIZE } from "../../types";
 import { postMessage } from "../shared/vscode-api";
 
+function postTriggerPaste(): void {
+  postMessage({ type: "triggerPaste" });
+}
+
+function postImageFromBlob(blob: Blob): void {
+  const reader = new FileReader();
+  reader.onload = () => {
+    if (typeof reader.result === "string") {
+      postMessage({
+        type: "imagePasted",
+        data: reader.result,
+      });
+    }
+  };
+  reader.onerror = () => {
+    console.error("FileReader failed to read image");
+    postTriggerPaste();
+  };
+  reader.onabort = () => {
+    postTriggerPaste();
+  };
+  reader.readAsDataURL(blob);
+}
+
+export function handlePasteEventWithImageSupport(
+  event: ClipboardEvent,
+): boolean {
+  const items = Array.from(event.clipboardData?.items ?? []);
+  const imageItem = items.find((item) => ALLOWED_IMAGE_TYPES.includes(item.type));
+  if (!imageItem) {
+    return false;
+  }
+
+  const blob = imageItem.getAsFile();
+  if (!blob) {
+    return false;
+  }
+
+  if (blob.size > MAX_IMAGE_SIZE) {
+    console.warn("Image too large, falling back to text paste");
+    return false;
+  }
+
+  postImageFromBlob(blob);
+  return true;
+}
+
 export async function handlePasteWithImageSupport(): Promise<void> {
   try {
     const items = await navigator.clipboard.read();
@@ -12,23 +59,7 @@ export async function handlePasteWithImageSupport(): Promise<void> {
           console.warn("Image too large, falling back to text paste");
           break;
         }
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (typeof reader.result === "string") {
-            postMessage({
-              type: "imagePasted",
-              data: reader.result,
-            });
-          }
-        };
-        reader.onerror = () => {
-          console.error("FileReader failed to read image");
-          postMessage({ type: "triggerPaste" });
-        };
-        reader.onabort = () => {
-          postMessage({ type: "triggerPaste" });
-        };
-        reader.readAsDataURL(blob);
+        postImageFromBlob(blob);
         return;
       }
     }
@@ -38,7 +69,7 @@ export async function handlePasteWithImageSupport(): Promise<void> {
       err,
     );
   }
-  postMessage({ type: "triggerPaste" });
+  postTriggerPaste();
 }
 
 export function copySelectionToClipboard(selection: string): void {

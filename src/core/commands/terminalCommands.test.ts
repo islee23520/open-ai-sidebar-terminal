@@ -22,6 +22,7 @@ type ProviderMock = Pick<
   | "focus"
   | "formatEditorReference"
   | "formatUriReference"
+  | "requestPaste"
   | "pasteText"
   | "openInEditorTab"
   | "toggleEditorAttachment"
@@ -35,6 +36,7 @@ function createProviderMock(): ProviderMock {
     focus: vi.fn(),
     formatEditorReference: vi.fn(),
     formatUriReference: vi.fn((uri) => `@${uri.fsPath}`),
+    requestPaste: vi.fn(),
     pasteText: vi.fn(),
     openInEditorTab: vi.fn(),
     toggleEditorAttachment: vi.fn(),
@@ -385,33 +387,28 @@ describe("registerTerminalCommands", () => {
     expect(deps.outputChannel?.info).not.toHaveBeenCalled();
   });
 
-  it("pastes clipboard text on success and reports clipboard failures", async () => {
+  it("requests webview paste handling and reports provider failures", async () => {
     const successDeps = createDependencies();
-    vi.mocked(vscode.env.clipboard.readText).mockResolvedValueOnce(
-      "clipboard text",
-    );
 
     const successCommands = registerAndGetCommands(successDeps);
     await getCommand(successCommands, "opencodeTui.paste")();
 
-    expect(successDeps.provider?.pasteText).toHaveBeenCalledWith(
-      "clipboard text",
-    );
+    expect(successDeps.provider?.requestPaste).toHaveBeenCalledTimes(1);
     expect(successDeps.outputChannel?.error).not.toHaveBeenCalled();
 
     vi.clearAllMocks();
     mockAutoFocusOnSend(true);
 
     const errorDeps = createDependencies();
-    vi.mocked(vscode.env.clipboard.readText).mockRejectedValueOnce(
-      new Error("clipboard unavailable"),
-    );
+    vi.mocked(errorDeps.provider!.requestPaste).mockImplementationOnce(() => {
+      throw new Error("webview unavailable");
+    });
 
     const errorCommands = registerAndGetCommands(errorDeps);
     await getCommand(errorCommands, "opencodeTui.paste")();
 
     expect(errorDeps.outputChannel?.error).toHaveBeenCalledWith(
-      "[TerminalProvider] Failed to paste: clipboard unavailable",
+      "[TerminalProvider] Failed to paste: webview unavailable",
     );
     expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
       "Failed to paste from clipboard",

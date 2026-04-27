@@ -14,7 +14,7 @@ Open Sidebar TUI embeds **OpenCode** directly in the VS Code sidebar instead of 
 It provides two main sidebar views:
 
 1. **OpenCode Terminal** in the secondary sidebar for the interactive TUI session.
-2. **Terminal Managers** in the activity bar for managing `tmux` sessions, panes, and windows.
+2. **Terminal Managers** for managing `tmux` sessions, panes, and windows.
 
 ## Key Features
 
@@ -60,7 +60,7 @@ Then install the generated VSIX from the Extensions view with **Install from VSI
 
 ## Quick Start
 
-1. Click the OpenCode icon in the activity bar to open **Terminal Managers**.
+1. Open **Terminal Managers** when you need to manage `tmux` sessions.
 2. Open **Open Sidebar Terminal** in the secondary sidebar.
 3. Let Open Sidebar TUI auto-start OpenCode, or start it manually.
 4. Work with OpenCode directly inside the sidebar.
@@ -91,7 +91,7 @@ The file-reference syntax stays the same in every language guide:
 
 ## Terminal Managers and tmux
 
-The **Terminal Managers** view is the control center for `tmux` workflows inside the sidebar.
+**Terminal Managers** is the control center for `tmux` workflows.
 
 It includes:
 
@@ -139,7 +139,6 @@ The most important settings stay in English because they must match the real VS 
 | ----------------------------- | ------------------------------------------------------- |
 | `opencodeTui.autoStart`       | Start OpenCode automatically when the view is activated |
 | `opencodeTui.autoStartOnOpen` | Start OpenCode when the sidebar opens                   |
-| `opencodeTui.command`         | Command used to launch OpenCode                         |
 | `opencodeTui.fontSize`        | Terminal font size                                      |
 | `opencodeTui.fontFamily`      | Terminal font family                                    |
 | `opencodeTui.autoFocusOnSend` | Focus the sidebar after sending file references         |

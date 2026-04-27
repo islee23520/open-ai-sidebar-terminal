@@ -57,8 +57,13 @@ export class TerminalManager {
     }>();
     const onExitEmitter = new vscode.EventEmitter<string>();
 
-    // Merge environment variables: custom env > process.env > defaults
+    const windowsDefaults: Record<string, string> =
+      process.platform === "win32"
+        ? { SystemRoot: process.env.SystemRoot ?? "C:\\Windows" }
+        : {};
+
     const mergedEnv: Record<string, string> = {
+      ...windowsDefaults,
       ...process.env,
       TERM: "xterm-256color",
       ...env,
@@ -210,7 +215,7 @@ export class TerminalManager {
     const shell =
       overrideShell ||
       vscode.env.shell ||
-      (os.platform() === "win32"
+      (process.platform === "win32"
         ? process.env.COMSPEC || "cmd.exe"
         : process.env.SHELL || "/bin/bash");
 
@@ -219,7 +224,7 @@ export class TerminalManager {
     }
 
     const shellName = path.basename(shell).toLowerCase();
-    if (os.platform() === "win32") {
+    if (process.platform === "win32") {
       if (shellName === "cmd.exe" || shellName === "cmd")
         return { shell, args: ["/c"] };
       if (shellName.includes("powershell") || shellName.includes("pwsh"))

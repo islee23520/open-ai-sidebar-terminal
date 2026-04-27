@@ -170,9 +170,8 @@ export function registerTerminalCommands(
     "opencodeTui.paste",
     async () => {
       try {
-        const text = await vscode.env.clipboard.readText();
-        if (text && deps.provider) {
-          deps.provider.pasteText(text);
+        if (deps.provider) {
+          deps.provider.requestPaste();
         }
       } catch (error) {
         deps.outputChannel?.error(

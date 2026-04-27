@@ -2,7 +2,7 @@
   "name": "opencode-sidebar-tui",
   "displayName": "Opencode Sidebar Terminal",
   "description": "Automatically render Opencode Sidebar Terminal in VS Code sidebar with full terminal support",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "publisher": "islee23520",
   "icon": "icon.png",
   "engines": {
@@ -21,7 +21,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": " https://github.com/islee23520/open-sidebar-terminal.git"
+    "url": "https://github.com/islee23520/open-sidebar-terminal.git"
   },
   "license": "MIT",
   "main": "./dist/extension.js",
@@ -135,7 +135,7 @@
       },
       {
         "command": "opencodeTui.toggleDashboard",
-        "title": "Toggle Session Dashboard",
+        "title": "Open Terminal Managers",
         "category": "Open Sidebar Terminal",
         "icon": "$(dashboard)"
       },
@@ -147,7 +147,7 @@
       },
       {
         "command": "opencodeTui.openDashboardInEditor",
-        "title": "Open Dashboard in Editor",
+        "title": "Open Terminal Managers in Editor",
         "category": "Open Sidebar Terminal",
         "icon": "$(editor-layout)"
       },
@@ -587,6 +587,9 @@
     "@xterm/xterm": "^6.0.0",
     "node-pty": "^1.2.0-beta.11",
     "preact": "^10.29.1"
+  },
+  "overrides": {
+    "serialize-javascript": "^7.0.5"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

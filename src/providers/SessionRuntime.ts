@@ -260,7 +260,10 @@ export class SessionRuntime {
       let resolvedTool: AiToolConfig | undefined;
       let command: string | undefined;
 
-      if (!forceNativeShell && (tmuxSessionId || this.pendingLaunchToolName)) {
+      if (
+        !forceNativeShell &&
+        (tmuxSessionId || this.pendingLaunchToolName || !this.tmuxSessionManager)
+      ) {
         resolvedTool = await this.resolveToolForStartup(config);
         if (!resolvedTool) {
           this.isStarting = false;
@@ -604,7 +607,7 @@ export class SessionRuntime {
     tmuxSessionId?: string,
   ): string | undefined {
     if (!tmuxSessionId) {
-      return undefined;
+      return defaultCommand;
     }
 
     return `tmux attach-session -t ${tmuxSessionId} \\; set-option -u status off`;
@@ -714,59 +717,6 @@ export class SessionRuntime {
     this.notifyActiveSession(sessionId);
   }
 
-  private async resolveLaunchChoice(
-    configKey: "nativeShellDefault" | "tmuxSessionDefault",
-  ): Promise<string | undefined> {
-    const config = vscode.workspace.getConfiguration("opencodeTui");
-    const persisted = config.get<string>(configKey, "");
-    if (persisted === "shell" || this.resolveToolConfig(persisted, config)) {
-      return persisted;
-    }
-
-    const items = this.getConfiguredTools(config).map((tool) => ({
-      label: `$(terminal) ${tool.label}`,
-      description: `Launch ${tool.label} in the terminal`,
-      value: tool.name,
-    }));
-    items.push({
-      label: "$(shell) Default Shell (zsh)",
-      description: "Launch default shell without an AI tool",
-      value: "shell",
-    });
-
-    const picked = await vscode.window.showQuickPick(items, {
-      placeHolder: "What would you like to launch?",
-      canPickMany: false,
-    });
-
-    if (!picked) {
-      return undefined;
-    }
-
-    const choice =
-      picked.value ??
-      (picked.label.includes("Default Shell")
-        ? "shell"
-        : this.getConfiguredTools(config).find((tool) =>
-            picked.label.includes(tool.label),
-          )?.name);
-    if (!choice) {
-      return undefined;
-    }
-
-    const remember = await vscode.window.showInformationMessage(
-      "Remember this choice? You can change it later in settings.",
-      { modal: false },
-      "Yes, remember",
-    );
-
-    if (remember === "Yes, remember") {
-      await config.update(configKey, choice, vscode.ConfigurationTarget.Global);
-    }
-
-    return choice;
-  }
-
   public async switchToNativeShell(): Promise<void> {
     this.selectedTmuxSessionId = undefined;
     this.forceNativeShellNextStart = true;
@@ -821,117 +771,6 @@ export class SessionRuntime {
     }
   }
 
-  public async createTmuxWindow(): Promise<
-    { windowId: string; paneId: string } | undefined
-  > {
-    if (!this.tmuxSessionManager) {
-      return undefined;
-    }
-    const workspacePath = this.resolveWorkspacePathForTmuxFallback();
-    const sessionId = workspacePath
-      ? await this.ensureWorkspaceSession(workspacePath)
-      : undefined;
-    if (!sessionId) {
-      this.logger.warn(
-        `[TerminalProvider] Cannot create tmux window: no workspace session available (instance=${this.activeInstanceId})`,
-      );
-      return undefined;
-    }
-    try {
-      const panes = await this.tmuxSessionManager.listPanes(sessionId, {
-        activeWindowOnly: true,
-      });
-      const activePane = panes.find((p) => p.isActive) ?? panes[0];
-      const result = await this.tmuxSessionManager.createWindow(
-        sessionId,
-        activePane?.currentPath ?? this.resolveWorkspacePathForTmuxFallback(),
-      );
-      await this.tmuxSessionManager.selectWindow(result.windowId);
-      return result;
-    } catch (error) {
-      this.logger.error(
-        `[TerminalProvider] Failed to create tmux window: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return undefined;
-    }
-  }
-
-  private async getActivePaneInSelectedWindow(
-    sessionId: string,
-  ): Promise<(typeof panes)[number] | undefined> {
-    const panes = await this.tmuxSessionManager!.listPanes(sessionId, {
-      activeWindowOnly: true,
-    });
-    return panes.find((p) => p.isActive) ?? panes[0];
-  }
-
-  public async navigateTmuxWindow(direction: "next" | "prev"): Promise<void> {
-    if (!this.tmuxSessionManager) {
-      return;
-    }
-    const workspacePath = this.resolveWorkspacePathForTmuxFallback();
-    const sessionId = workspacePath
-      ? await this.ensureWorkspaceSession(workspacePath)
-      : undefined;
-    if (!sessionId) {
-      this.logger.warn(
-        `[TerminalProvider] Cannot navigate tmux window: no workspace session available (instance=${this.activeInstanceId})`,
-      );
-      return;
-    }
-    try {
-      if (direction === "next") {
-        await this.tmuxSessionManager.nextWindow(sessionId);
-      } else {
-        await this.tmuxSessionManager.prevWindow(sessionId);
-      }
-    } catch (error) {
-      this.logger.error(
-        `[TerminalProvider] Failed to navigate tmux window: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-
-  public async splitTmuxPane(
-    direction: "h" | "v",
-  ): Promise<string | undefined> {
-    if (!this.tmuxSessionManager) {
-      return undefined;
-    }
-    const workspacePath = this.resolveWorkspacePathForTmuxFallback();
-    const sessionId = workspacePath
-      ? await this.ensureWorkspaceSession(workspacePath)
-      : undefined;
-    if (!sessionId) {
-      this.logger.warn(
-        `[TerminalProvider] Cannot split tmux pane: no workspace session available (instance=${this.activeInstanceId})`,
-      );
-      return undefined;
-    }
-    try {
-      const panes = await this.tmuxSessionManager.listPanes(sessionId, {
-        activeWindowOnly: true,
-      });
-      const activePane = panes.find((p) => p.isActive) ?? panes[0];
-      const workingDirectory = this.resolveWorkspacePathForTmuxFallback();
-      if (activePane) {
-        return await this.tmuxSessionManager.splitPane(
-          activePane.paneId,
-          direction,
-          {
-            workingDirectory,
-          },
-        );
-      }
-      return undefined;
-    } catch (error) {
-      this.logger.error(
-        `[TerminalProvider] Failed to split tmux pane: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return undefined;
-    }
-  }
-
   public async zoomTmuxPane(): Promise<void> {
     if (!this.tmuxSessionManager) {
       return;
@@ -957,73 +796,6 @@ export class SessionRuntime {
         `[TerminalProvider] Failed to zoom tmux pane: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-  }
-
-  public async killTmuxPane(): Promise<void> {
-    if (!this.tmuxSessionManager) {
-      return;
-    }
-    const workspacePath = this.resolveWorkspacePathForTmuxFallback();
-    const sessionId = workspacePath
-      ? await this.ensureWorkspaceSession(workspacePath)
-      : undefined;
-    if (!sessionId) {
-      this.logger.warn(
-        `[TerminalProvider] Cannot kill tmux pane: no workspace session available (instance=${this.activeInstanceId})`,
-      );
-      return;
-    }
-    try {
-      const panes = await this.tmuxSessionManager.listPanes(sessionId, {
-        activeWindowOnly: true,
-      });
-      if (panes.length > 1) {
-        const activePane = panes.find((p) => p.isActive) ?? panes[0];
-        if (activePane) {
-          await this.tmuxSessionManager.killPane(activePane.paneId);
-        }
-        return;
-      }
-      // Single pane — kill the window instead (preserves session if multiple windows)
-      const windows = await this.tmuxSessionManager.listWindows(sessionId);
-      if (windows.length <= 1) {
-        return;
-      }
-      const activeWindow = windows.find((w) => w.isActive) ?? windows[0];
-      if (activeWindow) {
-        await this.tmuxSessionManager.killWindow(activeWindow.windowId);
-      }
-      const activePane = panes.find((p) => p.isActive) ?? panes[0];
-      if (activePane) {
-        await this.tmuxSessionManager.killPane(activePane.paneId);
-      }
-    } catch (error) {
-      this.logger.error(
-        `[TerminalProvider] Failed to kill tmux pane: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-
-  public async navigateTmuxSession(direction: "next" | "prev"): Promise<void> {
-    if (!this.tmuxSessionManager) {
-      return;
-    }
-    const sessions = await this.tmuxSessionManager.discoverSessions();
-    if (sessions.length === 0) {
-      return;
-    }
-    const currentIndex = sessions.findIndex(
-      (s) => s.id === this.selectedTmuxSessionId,
-    );
-    let targetIndex: number;
-    if (currentIndex === -1) {
-      targetIndex = 0;
-    } else if (direction === "next") {
-      targetIndex = (currentIndex + 1) % sessions.length;
-    } else {
-      targetIndex = (currentIndex - 1 + sessions.length) % sessions.length;
-    }
-    await this.switchToTmuxSession(sessions[targetIndex].id);
   }
 
   public async killTmuxSession(sessionId: string): Promise<void> {

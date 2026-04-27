@@ -166,7 +166,7 @@ describe("TerminalProvider", () => {
     expect(switchSpy).toHaveBeenCalledWith("tmux-b");
   });
 
-  it("routes kill/create/native session messages to provider handlers", () => {
+  it("routes kill/create session messages to provider handlers", () => {
     mockConfiguration();
     provider = createProvider();
     const { messageHandler } = resolveProvider(provider);
@@ -176,17 +176,12 @@ describe("TerminalProvider", () => {
     const createSpy = vi
       .spyOn(provider, "createTmuxSession")
       .mockResolvedValue(undefined);
-    const nativeSpy = vi
-      .spyOn(provider, "switchToNativeShell")
-      .mockResolvedValue(undefined);
 
     messageHandler({ type: "killSession", sessionId: "tmux-k" });
     messageHandler({ type: "createTmuxSession" });
-    messageHandler({ type: "switchNativeShell" });
 
     expect(killSpy).toHaveBeenCalledWith("tmux-k");
     expect(createSpy).toHaveBeenCalledTimes(1);
-    expect(nativeSpy).toHaveBeenCalledTimes(1);
   });
 
   it("routes launchAiTool messages through the provider launch path", async () => {
@@ -223,42 +218,6 @@ describe("TerminalProvider", () => {
       true,
       undefined,
     );
-  });
-
-  it("does not auto-open the AI tool selector after tmux window creation", async () => {
-    mockConfiguration();
-    provider = createProvider();
-    const { messageHandler } = resolveProvider(provider);
-    vi.spyOn(provider, "createTmuxWindow").mockImplementation(
-      async () => ({ windowId: "@1", paneId: "%8" }) as any,
-    );
-    vi.spyOn(provider, "getSelectedTmuxSessionId").mockReturnValue("tmux-a");
-    const showSpy = vi
-      .spyOn(provider, "showAiToolSelector")
-      .mockResolvedValue(undefined);
-
-    messageHandler({ type: "createTmuxWindow" });
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(showSpy).not.toHaveBeenCalled();
-  });
-
-  it("does not auto-open the AI tool selector after tmux pane split", async () => {
-    mockConfiguration();
-    provider = createProvider();
-    const { messageHandler } = resolveProvider(provider);
-    vi.spyOn(provider, "splitTmuxPane").mockResolvedValue("%8");
-    vi.spyOn(provider, "getSelectedTmuxSessionId").mockReturnValue("tmux-a");
-    const showSpy = vi
-      .spyOn(provider, "showAiToolSelector")
-      .mockResolvedValue(undefined);
-
-    messageHandler({ type: "splitTmuxPane", direction: "h" });
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(showSpy).not.toHaveBeenCalled();
   });
 
   it("routes zoomTmuxPane messages through the provider zoom path", async () => {
@@ -369,7 +328,7 @@ describe("TerminalProvider", () => {
     expect(view.show).toHaveBeenCalledWith(true);
   });
 
-  it("starts default shell for non-tmux session without sidebar tree interaction", async () => {
+  it("starts the default AI tool directly for non-tmux sessions", async () => {
     mockConfiguration({ autoStartOnOpen: false, enableHttpApi: false });
     provider = createProvider();
     const createTerminalSpy = vi.spyOn(terminalManager, "createTerminal");
@@ -380,7 +339,7 @@ describe("TerminalProvider", () => {
 
     expect(createTerminalSpy).toHaveBeenCalledWith(
       "opencode-main",
-      undefined,
+      "opencode -c",
       {},
       undefined,
       120,
@@ -390,7 +349,7 @@ describe("TerminalProvider", () => {
     );
   });
 
-  it("ignores defaultAiTool config for non-tmux sessions and starts default shell", async () => {
+  it("uses defaultAiTool config for non-tmux sessions", async () => {
     mockConfiguration({
       autoStartOnOpen: false,
       enableHttpApi: false,
@@ -405,7 +364,7 @@ describe("TerminalProvider", () => {
 
     expect(createTerminalSpy).toHaveBeenCalledWith(
       "opencode-main",
-      undefined,
+      "codex",
       {},
       undefined,
       120,
@@ -1600,27 +1559,14 @@ describe("TerminalProvider", () => {
       .spyOn(runtime, "switchToNativeShell")
       .mockResolvedValue(undefined);
     vi.spyOn(runtime, "createTmuxSession").mockResolvedValue("tmux-wrapper");
-    const createWindowSpy = vi
-      .spyOn(runtime, "createTmuxWindow")
-      .mockResolvedValue(undefined);
-    const navigateWindowSpy = vi
-      .spyOn(runtime, "navigateTmuxWindow")
-      .mockResolvedValue(undefined);
-    const navigateSessionSpy = vi
-      .spyOn(runtime, "navigateTmuxSession")
-      .mockResolvedValue(undefined);
     const killSessionSpy = vi
       .spyOn(runtime, "killTmuxSession")
       .mockResolvedValue(undefined);
-    vi.spyOn(runtime, "splitTmuxPane").mockResolvedValue("%123");
     vi.spyOn(runtime, "getSelectedTmuxSessionId").mockReturnValue(
       "tmux-selected",
     );
     const zoomSpy = vi
       .spyOn(runtime, "zoomTmuxPane")
-      .mockResolvedValue(undefined);
-    const killPaneSpy = vi
-      .spyOn(runtime, "killTmuxPane")
       .mockResolvedValue(undefined);
     vi.spyOn(runtime, "formatFileReference").mockReturnValue(fileReference);
 
@@ -1648,26 +1594,14 @@ describe("TerminalProvider", () => {
     expect(switchToNativeSpy).toHaveBeenCalledTimes(1);
 
     await expect(provider.createTmuxSession()).resolves.toBe("tmux-wrapper");
-    await provider.createTmuxWindow();
-    expect(createWindowSpy).toHaveBeenCalledTimes(1);
-
-    await provider.navigateTmuxWindow("next");
-    expect(navigateWindowSpy).toHaveBeenCalledWith("next");
-
-    await provider.navigateTmuxSession("prev");
-    expect(navigateSessionSpy).toHaveBeenCalledWith("prev");
 
     await provider.killTmuxSession("tmux-wrapper");
     expect(killSessionSpy).toHaveBeenCalledWith("tmux-wrapper");
 
-    await expect(provider.splitTmuxPane("v")).resolves.toBe("%123");
     expect(provider.getSelectedTmuxSessionId()).toBe("tmux-selected");
 
     await provider.zoomTmuxPane();
     expect(zoomSpy).toHaveBeenCalledTimes(1);
-
-    await provider.killTmuxPane();
-    expect(killPaneSpy).toHaveBeenCalledTimes(1);
 
     expect(provider.formatFileReference({ path: "src/example.ts" })).toBe(
       fileReference,
@@ -1726,6 +1660,11 @@ describe("TerminalProvider", () => {
     expect(view.webview.postMessage).toHaveBeenCalledWith({
       type: "clipboardContent",
       text: "clipboard payload",
+    });
+
+    provider.requestPaste();
+    expect(view.webview.postMessage).toHaveBeenCalledWith({
+      type: "requestPaste",
     });
 
     provider.lastKnownCols = 132;
