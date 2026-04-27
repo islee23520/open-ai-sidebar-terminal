@@ -3,7 +3,10 @@ import * as TmuxPrompt from "./tmux-prompt";
 import * as AiSelector from "./ai-tool-selector";
 import * as TmuxCmd from "./tmux-command-dropdown";
 import { HostMessage } from "../types";
-import { handlePasteWithImageSupport } from "./clipboard";
+import {
+  copySelectionToClipboard,
+  handlePasteEventWithImageSupport,
+} from "./clipboard";
 import { postMessage } from "./shared/vscode-api";
 import { initTerminal } from "./terminal";
 import { createMessageHandler, type MessageHandlerCallbacks } from "./messages";
@@ -117,9 +120,28 @@ function initApp(): void {
   container.addEventListener(
     "paste",
     (event: ClipboardEvent) => {
+      if (!handlePasteEventWithImageSupport(event)) {
+        return;
+      }
+
       event.preventDefault();
       event.stopImmediatePropagation();
-      void handlePasteWithImageSupport();
+    },
+    { capture: true },
+  );
+
+  container.addEventListener(
+    "copy",
+    (event: ClipboardEvent) => {
+      const selection = instance?.terminal.hasSelection()
+        ? instance.terminal.getSelection()
+        : "";
+      if (!selection) {
+        return;
+      }
+
+      event.preventDefault();
+      copySelectionToClipboard(selection);
     },
     { capture: true },
   );
