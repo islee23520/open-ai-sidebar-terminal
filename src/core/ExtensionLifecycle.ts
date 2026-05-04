@@ -5,7 +5,6 @@ import { TerminalManager } from "../terminals/TerminalManager";
 import { OutputCaptureManager } from "../services/OutputCaptureManager";
 import { ContextSharingService } from "../services/ContextSharingService";
 import { ContextManager } from "../services/ContextManager";
-import type { ILogger } from "../services/ILogger";
 import { OutputChannelService } from "../services/OutputChannelService";
 import { InstanceDiscoveryService } from "../services/InstanceDiscoveryService";
 import { OpenCodeApiClient } from "../services/OpenCodeApiClient";
@@ -16,6 +15,11 @@ import { InstanceController } from "../services/InstanceController";
 import { PortManager } from "../services/PortManager";
 import { ConnectionResolver } from "../services/ConnectionResolver";
 import { TmuxSessionManager } from "../services/TmuxSessionManager";
+import { ZellijSessionManager } from "../services/ZellijSessionManager";
+import {
+  StaticTerminalBackend,
+  TerminalBackendRegistry,
+} from "../services/terminalBackends";
 import { TerminalDashboardProvider } from "../providers/TerminalDashboardProvider";
 import {
   registerCommands as registerAllCommands,
@@ -40,6 +44,8 @@ export class ExtensionLifecycle {
   private instanceController: InstanceController | undefined;
   private portManager: PortManager | undefined;
   private tmuxSessionManager: TmuxSessionManager | undefined;
+  private zellijSessionManager: ZellijSessionManager | undefined;
+  private backendRegistry: TerminalBackendRegistry | undefined;
   private terminalDashboardProvider: TerminalDashboardProvider | undefined;
   private activated = false;
   private tuiProviderRegistration: vscode.Disposable | undefined;
@@ -104,23 +110,32 @@ export class ExtensionLifecycle {
 
       this.instanceStore = new InstanceStore();
       this.portManager = new PortManager(this.instanceStore);
-      const enableTmux = vscode.workspace
-        .getConfiguration("opencodeTui")
-        .get<boolean>("enableTmux", true);
-      if (enableTmux) {
-        const tmuxSessionManager = new TmuxSessionManager(logger);
-        if (await tmuxSessionManager.isAvailable()) {
-          this.tmuxSessionManager = tmuxSessionManager;
-        } else {
-          logger.info(
-            "[ExtensionLifecycle] tmux not detected; using native terminal shell behavior",
-          );
-        }
+      const tmuxSessionManager = new TmuxSessionManager(logger);
+      if (await tmuxSessionManager.isAvailable()) {
+        this.tmuxSessionManager = tmuxSessionManager;
       } else {
         logger.info(
-          "[ExtensionLifecycle] tmux disabled by opencodeTui.enableTmux setting; using native terminal shell behavior",
+          "[ExtensionLifecycle] tmux not detected; tmux backend unavailable",
         );
       }
+
+      const zellijSessionManager = new ZellijSessionManager(logger);
+      if (await zellijSessionManager.isAvailable()) {
+        this.zellijSessionManager = zellijSessionManager;
+      } else {
+        logger.info(
+          "[ExtensionLifecycle] zellij not detected; zellij backend unavailable",
+        );
+      }
+      this.backendRegistry = new TerminalBackendRegistry([
+        new StaticTerminalBackend("native", "Native", true),
+        new StaticTerminalBackend("tmux", "Tmux", !!this.tmuxSessionManager),
+        new StaticTerminalBackend(
+          "zellij",
+          "Zellij",
+          !!this.zellijSessionManager,
+        ),
+      ]);
       this.instanceRegistry = new InstanceRegistry(context);
       this.instanceRegistry.hydrate(this.instanceStore);
 
@@ -158,6 +173,8 @@ export class ExtensionLifecycle {
         this.portManager,
         this.instanceStore,
         this.tmuxSessionManager,
+        this.zellijSessionManager,
+        this.backendRegistry,
       );
 
       // Register webview provider — guard against double-registration on fast
@@ -203,6 +220,7 @@ export class ExtensionLifecycle {
           logger,
           this.instanceStore,
           this.tuiProvider,
+          this.zellijSessionManager,
         );
 
         context.subscriptions.push(
@@ -253,6 +271,9 @@ export class ExtensionLifecycle {
       },
       get tmuxManager() {
         return self.tmuxSessionManager;
+      },
+      get zellijManager() {
+        return self.zellijSessionManager;
       },
       get terminalManager() {
         return self.terminalManager;
@@ -330,7 +351,9 @@ export class ExtensionLifecycle {
     if (config.get<boolean>("autoFocusOnSend", true)) {
       vscode.commands.executeCommand("opencodeTui.focus");
       setTimeout(() => {
-        this.tuiProvider?.focus();
+        if (typeof this.tuiProvider?.focus === "function") {
+          this.tuiProvider.focus();
+        }
       }, 100);
     }
   }
@@ -394,7 +417,9 @@ export class ExtensionLifecycle {
     if (config.get<boolean>("autoFocusOnSend", true)) {
       vscode.commands.executeCommand("opencodeTui.focus");
       setTimeout(() => {
-        this.tuiProvider?.focus();
+        if (typeof this.tuiProvider?.focus === "function") {
+          this.tuiProvider.focus();
+        }
       }, 100);
     }
   }

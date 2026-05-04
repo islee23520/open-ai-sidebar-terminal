@@ -17,20 +17,28 @@ import {
   TMUX_WEBVIEW_COMMAND_IDS,
   WebviewMessage,
 } from "../types";
-import type { TmuxRawSubcommand, TmuxWebviewCommandId } from "../types";
+import type {
+  TerminalBackendType,
+  TmuxRawSubcommand,
+  TmuxWebviewCommandId,
+} from "../types";
 import { isWindowsAbsolutePath } from "../utils/pathUtils";
 
 export interface MessageRouterProviderBridge {
   startOpenCode(): Promise<void>;
   switchToTmuxSession(sessionId: string): Promise<void>;
+  switchToZellijSession(sessionId: string): Promise<void>;
   killTmuxSession(sessionId: string): Promise<void>;
   createTmuxSession(): Promise<string | undefined>;
   toggleDashboard(): void;
   toggleEditorAttachment(): Promise<void>;
   restart(): void;
   switchToNativeShell(): Promise<void>;
+  selectTerminalBackend(backend: TerminalBackendType): Promise<void>;
+  cycleTerminalBackend(): Promise<void>;
   pasteText(text: string): void;
   getActiveInstanceId(): InstanceId;
+  getActiveTerminalId(): string;
   setLastKnownTerminalSize(cols: number, rows: number): void;
   getLastKnownTerminalSize(): { cols: number; rows: number };
   isStarted(): boolean;
@@ -58,6 +66,13 @@ export interface MessageRouterProviderBridge {
   zoomTmuxPane(): Promise<void>;
   getSelectedTmuxSessionId(): string | undefined;
   isTmuxAvailable(): boolean;
+  isZellijAvailable(): boolean;
+  getActiveBackend(): TerminalBackendType;
+  getBackendAvailability(): {
+    native: boolean;
+    tmux: boolean;
+    zellij: boolean;
+  };
 }
 
 export class MessageRouter {
@@ -129,7 +144,11 @@ export class MessageRouter {
         break;
       case "switchSession":
         if (typeof message.sessionId === "string") {
-          void this.provider.switchToTmuxSession(message.sessionId);
+          if (this.provider.getActiveBackend() === "zellij") {
+            void this.provider.switchToZellijSession(message.sessionId);
+          } else {
+            void this.provider.switchToTmuxSession(message.sessionId);
+          }
         }
         break;
       case "killSession":
@@ -138,7 +157,11 @@ export class MessageRouter {
         }
         break;
       case "createTmuxSession":
-        void this.provider.createTmuxSession();
+        if (this.provider.getActiveBackend() === "zellij") {
+          void this.provider.selectTerminalBackend("zellij");
+        } else {
+          void this.provider.createTmuxSession();
+        }
         break;
       case "launchAiTool":
         void this.provider.launchAiTool(
@@ -159,10 +182,18 @@ export class MessageRouter {
         break;
       case "sendTmuxPromptChoice":
         if (message.choice === "tmux") {
-          void this.provider.createTmuxSession();
+          void this.provider.selectTerminalBackend("tmux");
         } else if (message.choice === "shell") {
           void this.provider.switchToNativeShell();
+        } else if (message.choice === "zellij") {
+          void this.provider.selectTerminalBackend("zellij");
         }
+        break;
+      case "selectTerminalBackend":
+        void this.provider.selectTerminalBackend(message.backend);
+        break;
+      case "cycleTerminalBackend":
+        void this.provider.cycleTerminalBackend();
         break;
       case "requestAiToolSelector": {
         const sessionId =
@@ -200,7 +231,7 @@ export class MessageRouter {
     }
 
     this.terminalManager.writeToTerminal(
-      this.provider.getActiveInstanceId(),
+      this.provider.getActiveTerminalId(),
       data,
     );
   }
@@ -232,6 +263,13 @@ export class MessageRouter {
     }
 
     try {
+      if (this.provider.getActiveBackend() === "zellij") {
+        this.logger.warn(
+          `[MessageRouter] executeTmuxRawCommand ignored for zellij backend: ${subcommand}`,
+        );
+        return;
+      }
+
       await this.provider.executeRawTmuxCommand(subcommand, args);
     } catch (error) {
       this.logger.error(
@@ -272,7 +310,7 @@ export class MessageRouter {
 
     this.provider.setLastKnownTerminalSize(cols, rows);
     this.terminalManager.resizeTerminal(
-      this.provider.getActiveInstanceId(),
+      this.provider.getActiveTerminalId(),
       cols,
       rows,
     );
@@ -296,6 +334,9 @@ export class MessageRouter {
       type: "platformInfo",
       platform: process.platform,
       tmuxAvailable: this.provider.isTmuxAvailable(),
+      zellijAvailable: this.provider.isZellijAvailable(),
+      backendAvailability: this.provider.getBackendAvailability(),
+      activeBackend: this.provider.getActiveBackend(),
     });
   }
 

@@ -6,6 +6,7 @@ import { MessageRouter } from "./MessageRouter";
 import { OutputChannelService } from "../services/OutputChannelService";
 import type { TerminalManager } from "../terminals/TerminalManager";
 import type { OutputCaptureManager } from "../services/OutputCaptureManager";
+import type { TerminalBackendType } from "../types";
 
 const mockWriteFile = vi.hoisted(() => vi.fn(async () => undefined));
 const mockUnlink = vi.hoisted(() => vi.fn(async () => undefined));
@@ -69,14 +70,18 @@ describe("MessageRouter", () => {
     return {
       startOpenCode: vi.fn(async () => undefined),
       switchToTmuxSession: vi.fn(async () => undefined),
+      switchToZellijSession: vi.fn(async () => undefined),
       killTmuxSession: vi.fn(async () => undefined),
       createTmuxSession: vi.fn(async () => "tmux-new"),
       toggleDashboard: vi.fn(),
       toggleEditorAttachment: vi.fn(async () => undefined),
       restart: vi.fn(),
       switchToNativeShell: vi.fn(async () => undefined),
+      selectTerminalBackend: vi.fn(async () => undefined),
+      cycleTerminalBackend: vi.fn(async () => undefined),
       pasteText: vi.fn(),
       getActiveInstanceId: vi.fn(() => "instance-1"),
+      getActiveTerminalId: vi.fn(() => "terminal-1"),
       setLastKnownTerminalSize: vi.fn(),
       getLastKnownTerminalSize: vi.fn(() => ({ cols: 120, rows: 40 })),
       isStarted: vi.fn(() => false),
@@ -94,6 +99,13 @@ describe("MessageRouter", () => {
       zoomTmuxPane: vi.fn(async () => undefined),
       getSelectedTmuxSessionId: vi.fn(() => "tmux-selected"),
       isTmuxAvailable: vi.fn(() => true),
+      isZellijAvailable: vi.fn(() => true),
+      getActiveBackend: vi.fn<() => TerminalBackendType>(() => "tmux"),
+      getBackendAvailability: vi.fn(() => ({
+        native: true,
+        tmux: true,
+        zellij: true,
+      })),
     };
   }
 
@@ -198,12 +210,12 @@ describe("MessageRouter", () => {
     await router.handleMessage({ type: "ready", cols: 80, rows: 25 });
 
     expect(terminalManager.writeToTerminal).toHaveBeenCalledWith(
-      "instance-1",
+      "terminal-1",
       "pwd\n",
     );
     expect(provider.setLastKnownTerminalSize).toHaveBeenCalledWith(100, 30);
     expect(terminalManager.resizeTerminal).toHaveBeenCalledWith(
-      "instance-1",
+      "terminal-1",
       100,
       30,
     );
@@ -212,6 +224,9 @@ describe("MessageRouter", () => {
       type: "platformInfo",
       platform: process.platform,
       tmuxAvailable: true,
+      zellijAvailable: true,
+      backendAvailability: { native: true, tmux: true, zellij: true },
+      activeBackend: "tmux",
     });
   });
 
@@ -242,6 +257,11 @@ describe("MessageRouter", () => {
       type: "sendTmuxPromptChoice",
       choice: "shell",
     });
+    await router.handleMessage({
+      type: "sendTmuxPromptChoice",
+      choice: "zellij",
+    });
+    await router.handleMessage({ type: "cycleTerminalBackend" });
     await router.handleMessage({ type: "requestAiToolSelector" });
     await router.handleMessage({
       type: "executeTmuxCommand",
@@ -261,7 +281,10 @@ describe("MessageRouter", () => {
     expect(provider.pasteText).toHaveBeenCalledWith("clipboard text");
     expect(provider.switchToTmuxSession).toHaveBeenCalledWith("tmux-a");
     expect(provider.killTmuxSession).toHaveBeenCalledWith("tmux-b");
-    expect(provider.createTmuxSession).toHaveBeenCalledTimes(2);
+    expect(provider.createTmuxSession).toHaveBeenCalledTimes(1);
+    expect(provider.selectTerminalBackend).toHaveBeenCalledWith("tmux");
+    expect(provider.selectTerminalBackend).toHaveBeenCalledWith("zellij");
+    expect(provider.cycleTerminalBackend).toHaveBeenCalledTimes(1);
     expect(provider.switchToNativeShell).toHaveBeenCalledTimes(1);
     expect(provider.launchAiTool).toHaveBeenCalledWith(
       "tmux-c",
@@ -280,6 +303,31 @@ describe("MessageRouter", () => {
     expect(provider.toggleDashboard).toHaveBeenCalledTimes(1);
     expect(provider.toggleEditorAttachment).toHaveBeenCalledTimes(1);
     expect(vscode.window.showTextDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes switchSession through zellij when zellij backend is active", async () => {
+    provider.getActiveBackend = vi.fn<() => TerminalBackendType>(() => "zellij");
+
+    await router.handleMessage({ type: "switchSession", sessionId: "zellij-a" });
+
+    expect(provider.switchToZellijSession).toHaveBeenCalledWith("zellij-a");
+    expect(provider.switchToTmuxSession).not.toHaveBeenCalled();
+  });
+
+  it("routes killSession through the backend-aware session runtime bridge for zellij", async () => {
+    provider.getActiveBackend = vi.fn<() => TerminalBackendType>(() => "zellij");
+
+    await router.handleMessage({ type: "killSession", sessionId: "zellij-b" });
+
+    expect(provider.killTmuxSession).toHaveBeenCalledWith("zellij-b");
+  });
+
+  it("routes zoomTmuxPane through the backend-aware session runtime bridge for zellij", async () => {
+    provider.getActiveBackend = vi.fn<() => TerminalBackendType>(() => "zellij");
+
+    await router.handleMessage({ type: "zoomTmuxPane" });
+
+    expect(provider.zoomTmuxPane).toHaveBeenCalledTimes(1);
   });
 
   it("routes filesDropped with shift and pane fallback or direct terminal writes", async () => {
@@ -679,6 +727,9 @@ describe("MessageRouter", () => {
       type: "platformInfo",
       platform: process.platform,
       tmuxAvailable: true,
+      zellijAvailable: true,
+      backendAvailability: { native: true, tmux: true, zellij: true },
+      activeBackend: "tmux",
     });
   });
 
