@@ -48,7 +48,9 @@ export function initTerminal(
     scrollback: config.scrollback,
   });
 
-  const keyboardHandler = createKeyboardHandler();
+  const keyboardHandler = createKeyboardHandler({
+    sendInput: (data) => options.onData(data),
+  });
   terminal.attachCustomKeyEventHandler(keyboardHandler.handler);
 
   const fitAddon = new FitAddon();

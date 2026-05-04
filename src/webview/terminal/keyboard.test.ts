@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createKeyboardHandler } from "./keyboard";
 
 const createKeyboardEvent = (
@@ -177,6 +177,110 @@ describe("createKeyboardHandler", () => {
       const winEvent = makeEvent();
       expect(winKeyboard.handler(winEvent)).toBe(true);
       expect(winEvent.defaultPrevented).toBe(true);
+    });
+  });
+
+  describe("Shift+Enter handling", () => {
+    it("sends \\r\\n through sendInput on Shift+Enter", () => {
+      const sendInput = vi.fn();
+      const keyboard = createKeyboardHandler({ isMac: true, sendInput });
+
+      const event = createKeyboardEvent({
+        key: "Enter",
+        code: "Enter",
+        shiftKey: true,
+      });
+
+      expect(keyboard.handler(event)).toBe(false);
+      expect(event.defaultPrevented).toBe(true);
+      expect(sendInput).toHaveBeenCalledWith("\r\n");
+    });
+
+    it("does not intercept Shift+Enter when Ctrl is held", () => {
+      const sendInput = vi.fn();
+      const keyboard = createKeyboardHandler({ isMac: true, sendInput });
+
+      const event = createKeyboardEvent({
+        key: "Enter",
+        code: "Enter",
+        shiftKey: true,
+        ctrlKey: true,
+      });
+
+      expect(keyboard.handler(event)).toBe(true);
+      expect(sendInput).not.toHaveBeenCalled();
+    });
+
+    it("does not intercept Shift+Enter when Alt is held", () => {
+      const sendInput = vi.fn();
+      const keyboard = createKeyboardHandler({ isMac: true, sendInput });
+
+      const event = createKeyboardEvent({
+        key: "Enter",
+        code: "Enter",
+        shiftKey: true,
+        altKey: true,
+      });
+
+      expect(keyboard.handler(event)).toBe(true);
+      expect(sendInput).not.toHaveBeenCalled();
+    });
+
+    it("does not intercept Shift+Enter when Meta is held", () => {
+      const sendInput = vi.fn();
+      const keyboard = createKeyboardHandler({ isMac: true, sendInput });
+
+      const event = createKeyboardEvent({
+        key: "Enter",
+        code: "Enter",
+        shiftKey: true,
+        metaKey: true,
+      });
+
+      expect(keyboard.handler(event)).toBe(true);
+      expect(sendInput).not.toHaveBeenCalled();
+    });
+
+    it("ignores Shift+Enter on keyup", () => {
+      const sendInput = vi.fn();
+      const keyboard = createKeyboardHandler({ isMac: true, sendInput });
+
+      const event = new KeyboardEvent("keyup", {
+        key: "Enter",
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+
+      expect(keyboard.handler(event)).toBe(true);
+      expect(sendInput).not.toHaveBeenCalled();
+    });
+
+    it("does not intercept Shift+Enter when sendInput is not provided", () => {
+      const keyboard = createKeyboardHandler({ isMac: true });
+
+      const event = createKeyboardEvent({
+        key: "Enter",
+        code: "Enter",
+        shiftKey: true,
+      });
+
+      expect(keyboard.handler(event)).toBe(true);
+    });
+
+    it("sends \\r\\n on Windows/Linux Shift+Enter", () => {
+      const sendInput = vi.fn();
+      const keyboard = createKeyboardHandler({ isMac: false, sendInput });
+
+      const event = createKeyboardEvent({
+        key: "Enter",
+        code: "Enter",
+        shiftKey: true,
+      });
+
+      expect(keyboard.handler(event)).toBe(false);
+      expect(event.defaultPrevented).toBe(true);
+      expect(sendInput).toHaveBeenCalledWith("\r\n");
     });
   });
 });
